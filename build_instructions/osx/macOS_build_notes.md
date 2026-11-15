@@ -1,4 +1,4 @@
-*** These instructions are old and are unlikely to work for modern Armory (0.97+). They are kept as is for historical reference, and we'll be updated once I find some kind soul to help with the OSX build ***
+*** These instructions are old and are unlikely to work for modern Armory (0.97+). They are kept as is for historical reference. To build Armory 0.97 on macOS, see [macos.md](macos.md). ***
 
 # macOS BUILD NOTES
 These notes describe what had to be done on fresh installs of macOS 10.9 - 10.13 in order to compile Armory.
@@ -38,7 +38,7 @@ If a bug is found, please consult the [Bitcoin Forum](https://bitcointalk.org/in
 
  7. Download Armory [here](https://github.com/goatpig/BitcoinArmory). There are two options.
 
-   7.1. Download the source code from the [GitHub Armory releases page](https://github.com/goatpig/BitcoinArmory/releases/). Ensure that you download **only** the relevant "src.tar.gz" file, and **not** the code from the "Download ZIP" buttonfound elsewhere on GitHub. (Long story short, the `fcgi` submodule, which Armory requires, will **only** be included in the "src.tar.gz" file due to a long-standing GitHub bug affecting code auto-downloads.) After verifying the code, per the [macOS README directions](../README_macOS.md), unzip the code.
+   7.1. Download the source code from the [GitHub Armory releases page](https://github.com/goatpig/BitcoinArmory/releases/). Ensure that you download **only** the relevant "src.tar.gz" file, and **not** the code from the "Download ZIP" buttonfound elsewhere on GitHub. (Long story short, the `fcgi` submodule, which Armory requires, will **only** be included in the "src.tar.gz" file due to a long-standing GitHub bug affecting code auto-downloads.) After verifying the code, per the [macOS README directions](https://github.com/goatpig/BitcoinArmory/blob/v0.96.5/README_macOS.md#downloading-and-verifying-armory), unzip the code.
 
    7.2. The more advanced method, which is recommended only for developers and other advanced tinkerers, is to use [Git version control](https://en.wikipedia.org/wiki/Git) in order to obtain the code. While more advanced, this makes it far easier to obtain code updates and to submit patches to Armory. Go [here](https://github.com/goatpig/BitcoinArmory) and use the "Clone or download" button to get a URL to use to clone the code. [This page](https://help.github.com/articles/cloning-a-repository-from-github/) has a partial tutorial, and [SourceTree](https://www.sourcetreeapp.com/) is a good app for starters. It is highly recommended that, at a bare minimum, users learn how to clone a repo and successfully switch between branches before going any further.
 
