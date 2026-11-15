@@ -1934,6 +1934,10 @@ namespace BridgeTestUtils {
             {
                auto notif = fromBridge.getNotification();
                switch (notif.which()) {
+                  case Codec::Bridge::Notification::NODE_STATUS:
+                     //pushed whenever the node status changes, ignore
+                     break;
+
                   case Codec::Bridge::Notification::SETUP_DONE:
                      gotSetupDone = true;
                      break;
@@ -2028,24 +2032,34 @@ namespace BridgeTestUtils {
       pushRequest(bridge, rawReq);
 
       //expecting setup done notif
-      auto reply = waitOnReply();
-      kj::ArrayPtr<const capnp::word> words(
-         reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
-         reply->data.getSize() / sizeof(capnp::word));
-      capnp::FlatArrayMessageReader reader(words);
+      while (true) {
+         auto reply = waitOnReply();
+         kj::ArrayPtr<const capnp::word> words(
+            reinterpret_cast<const capnp::word*>(reply->data.getPtr()),
+            reply->data.getSize() / sizeof(capnp::word));
+         capnp::FlatArrayMessageReader reader(words);
 
-      auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
-      if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
-         return false;
-      }
+         auto fromBridge = reader.getRoot<Codec::Bridge::FromBridge>();
+         if (fromBridge.which() != Codec::Bridge::FromBridge::NOTIFICATION) {
+            return false;
+         }
 
-      auto notif = fromBridge.getNotification();
-      if (notif.which() != Codec::Bridge::Notification::REGISTER_DONE) {
-         std::cout << "expected register_done notif, instead got: " <<
-            (int)notif.which() << std::endl;
-         return false;
+         auto notif = fromBridge.getNotification();
+         switch (notif.which())
+         {
+            case Codec::Bridge::Notification::REGISTER_DONE:
+               return true;
+
+            case Codec::Bridge::Notification::NODE_STATUS:
+               //pushed whenever the node status changes, ignore
+               break;
+
+            default:
+               std::cout << "expected register_done notif, instead got: " <<
+                  (int)notif.which() << std::endl;
+               return false;
+         }
       }
-      return true;
    }
 
    bool registerWallet(std::shared_ptr<Bridge::CppBridge> bridge,
@@ -2096,6 +2110,7 @@ namespace BridgeTestUtils {
             }
 
             case Codec::Bridge::Notification::SCAN_PROGRESS:
+            case Codec::Bridge::Notification::NODE_STATUS:
                break;
 
             default:
