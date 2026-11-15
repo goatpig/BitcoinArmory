@@ -8,11 +8,6 @@
 #   binaries. They're required by the linked libraries. Be sure to include them
 #   in any new binaries.
 
-# "#include <tr1/tuple>" causes a build error on macOS without this flag.
-if BUILD_DARWIN
-AM_CXXFLAGS += -DGTEST_USE_OWN_TR1_TUPLE=1
-endif
-
 # Standard gtest library
 noinst_LTLIBRARIES += gtest/libgtest.la
 gtest_libgtest_la_CXXFLAGS = $(AM_CXXFLAGS) $(UNIT_TEST_CXXFLAGS) $(LIBBTC_FLAGS)
