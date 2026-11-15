@@ -460,6 +460,7 @@ namespace {
             RpcBroadcastPacket packet;
             packet.rawTx_ = bdPtr;
             packet.bdvPtr_ = bdv;
+            packet.bdvId_ = bdvId;
             clients->rpcBroadcast(packet);
             break;
          }
@@ -1698,6 +1699,11 @@ void Clients::broadcastThroughRPC()
       const BinaryData& hash, std::shared_ptr<BdvClient> bdvPtr,
       int errCode, const std::string& verbose)->void
    {
+      if (bdvPtr == nullptr) {
+         //the bdv is gone or never registered, nobody to report to
+         LOGWARN << "rpc broadcast: no bdv for error: " << verbose;
+         return;
+      }
       auto notifPacket = std::make_shared<BDV_Notification_Packet>();
       notifPacket->bdvPtr = bdvPtr;
       notifPacket->notifPtr = std::make_shared<BDV_Notification_Error>(
@@ -1739,7 +1745,7 @@ void Clients::broadcastThroughRPC()
 
          if (!zcPtr->insertWatcherEntry(
             *hashes.begin(), packet.rawTx_, //tx
-            packet.bdvPtr_->getID(),
+            packet.bdvId_,
             extraRequestors, //extra requestor, in case this is a fallback
             false)) { //do not process watcher node invs for this entry
             //there is already a watcher entry for this tx, our request has been 
@@ -1753,7 +1759,7 @@ void Clients::broadcastThroughRPC()
          0, //no timeout, this batch promise has to be set to progress
          nullptr, //no error callback
          true,
-         packet.bdvPtr_->getID()
+         packet.bdvId_
       );
 
       //push to rpc
@@ -2022,6 +2028,7 @@ void Clients::p2pBroadcast(Types::BdvId bdvId, std::vector<BinaryDataRef>& rawZC
          RpcBroadcastPacket packet;
          packet.rawTx_ = fallbackStruct.rawTxPtr;
          packet.bdvPtr_ = bdvPtr;
+         packet.bdvId_ = bdvId;
          packet.extraRequestors_ = std::move(extraRequestors);
          rpcPackets.emplace_back(std::move(packet));
       }

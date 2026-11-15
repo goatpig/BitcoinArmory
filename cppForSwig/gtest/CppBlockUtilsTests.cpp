@@ -3476,6 +3476,134 @@ TEST_F(BlockUtilsBareWithServer, ZcError_BdvGone)
 
 ////////////////////////////////////////////////////////////////////////////////
 namespace {
+   /*
+   Well formed tx spending an outpoint that does not exist: the mocked node
+   ignores it on the p2p layer, so its broadcast times out and falls back
+   to the rpc broadcast, which rejects it
+   */
+   BinaryData unknownOutpointTx()
+   {
+      BinaryWriter bw;
+      bw.put_uint32_t(1); //version
+      bw.put_var_int(1); //txin count
+      bw.put_BinaryData(BinaryData(std::vector<uint8_t>(32, 0xAB)));
+      bw.put_uint32_t(0); //outpoint index
+      bw.put_var_int(0); //empty sigscript
+      bw.put_uint32_t(UINT32_MAX); //sequence
+      bw.put_var_int(1); //txout count
+      bw.put_uint64_t(COIN);
+      bw.put_var_int(25); //p2pkh script size
+      bw.put_uint8_t(0x76); //OP_DUP
+      bw.put_uint8_t(0xA9); //OP_HASH160
+      bw.put_uint8_t(20);
+      bw.put_BinaryData(TestChain::scrAddrA.getSliceCopy(1, 20));
+      bw.put_uint8_t(0x88); //OP_EQUALVERIFY
+      bw.put_uint8_t(0xAC); //OP_CHECKSIG
+      bw.put_uint32_t(0); //locktime
+      return bw.getData();
+   }
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, P2PBroadcastFallback_BdvGone)
+{
+   /*
+   The bdv that pushed a zc can be gone by the time its p2p broadcast times
+   out: the rpc fallback goes on without it, and still reports to the other
+   bdvs that pushed the same zc
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+      startWSServer(clients);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      theBDMt_->bdm()->enableZeroConf();
+
+      const auto magic = Config::BitcoinSettings::getMagicBytes().toHexStr();
+      auto callbackA = std::make_shared<ErrorCatcher>();
+      auto bdvA = connectClient(callbackA);
+      bdvA->registerWithDB(magic);
+      auto callbackB = std::make_shared<ErrorCatcher>();
+      auto bdvB = connectClient(callbackB);
+      bdvB->registerWithDB(magic);
+      ASSERT_EQ(clients->getBdvIds().size(), 2U);
+
+      //a bdv only gets error notifications once it is ready
+      bdvB->goOnline();
+      callbackB->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      //A pushes the zc, B pushes it after A and gets tied to A's broadcast,
+      //a reply to the next request means the broadcast was processed
+      auto rawTx = unknownOutpointTx();
+      bdvA->broadcastZC({rawTx});
+      ASSERT_TRUE(nodeStatusReplies(*bdvA));
+      bdvB->broadcastZC({rawTx});
+      ASSERT_TRUE(nodeStatusReplies(*bdvB));
+
+      //A leaves before the 5s p2p timeout
+      bdvA->unregisterFromDB();
+      for (unsigned i=0; i<50 && clients->getBdvIds().size() != 1; i++) {
+         std::this_thread::sleep_for(100ms);
+      }
+      ASSERT_EQ(clients->getBdvIds().size(), 1U);
+
+      //B gets the rpc fallback's error
+      auto error = callbackB->nextError(10s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorData, Tx(rawTx).getThisHash());
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, P2PBroadcastFallback_UnregisteredClient)
+{
+   /*
+   Same as above, for a zc pushed by a client that never registered a bdv
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      theBDMt_->bdm()->enableZeroConf();
+
+      auto unregistered = connectClient(
+         std::make_shared<DBTestUtils::UTCallback>());
+      auto pCallback = std::make_shared<ErrorCatcher>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      bdvObj->goOnline();
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      unregistered->broadcastZC({unknownOutpointTx()});
+
+      //wait out the 5s p2p timeout, the fallback is queued by then
+      std::this_thread::sleep_for(7s);
+
+      //the rpc broadcast thread still serves the registered bdv
+      std::vector<uint8_t> invalidTx{1, 2, 3};
+      capnp::MallocMessageBuilder message;
+      auto request = message.initRoot<Codec::BDV::Request>();
+      auto staticRequest = request.initStatic();
+      staticRequest.setRpcBroadcast(
+         capnp::Data::Reader(invalidTx.data(), invalidTx.size()));
+      auto fut = sendRawRequest(*bdvObj, toBytes(message));
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      EXPECT_TRUE(fut.get().success);
+
+      auto error = pCallback->nextError(5s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
    //scrAddr filter running against a bdm state of our choosing
    class ScrAddrFilter_ControlledBDM : public ScrAddrFilter
    {
