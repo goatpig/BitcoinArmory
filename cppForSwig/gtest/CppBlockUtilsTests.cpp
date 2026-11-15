@@ -3237,6 +3237,89 @@ TEST_F(BlockUtilsBareWithServerDeathTest, ChainRequests_BDMNotReady)
    }), ::testing::ExitedWithCode(0), "");
 }
 
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, BdvDataRequests_BDMNotReady)
+{
+   /*
+   The bdv requests that read the db are rejected until the bdm is ready.
+   Wallet registration and goOnline are taken before it is ready and
+   served once it is
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      auto bdvRequest = [this, &bdvObj](
+         const std::function<void(Codec::BDV::BdvRequest::Builder)>& fill)
+         ->RawReply
+      {
+         capnp::MallocMessageBuilder message;
+         auto request = message.initRoot<Codec::BDV::Request>();
+         fill(request.initBdv());
+         auto fut = sendRawRequest(*bdvObj, toBytes(message));
+         if (fut.wait_for(5s) != std::future_status::ready) {
+            return RawReply{false, "no reply", UINT32_MAX};
+         }
+         return fut.get();
+      };
+
+      std::vector<uint8_t> unknownHash(32, 0x5a);
+      auto txsByHash = [&]{
+         return bdvRequest([&unknownHash](Codec::BDV::BdvRequest::Builder req){
+            auto hashes = req.initGetTxsByHash(1);
+            hashes.set(0, capnp::Data::Reader(
+               unknownHash.data(), unknownHash.size()));
+         });
+      };
+      auto txsByKey = [&]{
+         return bdvRequest([](Codec::BDV::BdvRequest::Builder req){
+            req.initGetTxsByKey(0);
+         });
+      };
+      auto txios = [&]{
+         return bdvRequest([](Codec::BDV::BdvRequest::Builder req){
+            req.setGetTxios(0);
+         });
+      };
+
+      //the bdm isn't started: db requests get rejected, a missing reply
+      //does not count as a rejection
+      for (auto& reply : { txsByHash(), txsByKey(), txios() }) {
+         EXPECT_FALSE(reply.success);
+         EXPECT_EQ(reply.error, "bdm is not ready");
+      }
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+
+      //wallet registration is taken
+      auto regReply = bdvRequest([](Codec::BDV::BdvRequest::Builder req){
+         auto regReq = req.initRegisterWallet();
+         regReq.setWalletId("wallet1");
+         regReq.setIsNew(false);
+         auto addresses = regReq.initAddresses(1);
+         addresses[0].setBody(capnp::Data::Reader(
+            TestChain::scrAddrA.getPtr(), TestChain::scrAddrA.getSize()));
+      });
+      EXPECT_TRUE(regReply.success) << regReply.error;
+      bdvObj->goOnline();
+
+      //start the bdm, the bdv that went online before gets the ready
+      //notification
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      for (auto& reply : { txsByHash(), txsByKey(), txios() }) {
+         EXPECT_TRUE(reply.success) << reply.error;
+      }
+   }), ::testing::ExitedWithCode(0), "");
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

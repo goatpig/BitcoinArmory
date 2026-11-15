@@ -114,6 +114,27 @@ namespace {
 
       switch (request.which())
       {
+         case BdvRequest::Which::GET_TXS_BY_HASH:
+         case BdvRequest::Which::GET_TXS_BY_KEY:
+         case BdvRequest::Which::GET_TXIOS:
+         {
+            //these read the chain and the db, reject them until the bdm is
+            //ready. Wallet registration and goOnline are queued until then
+            if (bdv->bdm()->waitUntilReady(0ms) != BDMState::Ready) {
+               auto builder = ReplyBuilder::getNew(bdv);
+               prepareReply(builder);
+               builder.setError("bdm is not ready");
+               return builder;
+            }
+            break;
+         }
+
+         default:
+            break;
+      }
+
+      switch (request.which())
+      {
          case BdvRequest::Which::REGISTER_WALLET:
          {
             auto walletRequest = request.getRegisterWallet();
