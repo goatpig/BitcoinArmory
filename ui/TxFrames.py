@@ -41,7 +41,7 @@ from ui.FeeSelectUI import FeeSelectionDialog
 from ui.QtExecuteSignal import TheSignalExecution
 from qtpy import QtGui, QtCore, QtWidgets
 from armorycolors import Colors
-from armoryengine.CppBridge import TheBridge
+from armoryengine.CppBridge import TheBridge, BridgeError
 
 CS_USE_FULL_CUSTOM_LIST = 1
 CS_ADJUST_FEE           = 2
@@ -437,7 +437,10 @@ class SendBitcoinsFrame(ArmoryFrame):
       self.widgetTable[-1]['QLE_COMM'].setCursorPosition(0)
       
       self.addCoinSelectionRecipient(len(self.widgetTable) - 1)
-      self.resolveCoinSelection()
+      try:
+         self.resolveCoinSelection()
+      except BridgeError:
+         pass
 
 
    #############################################################################
@@ -826,9 +829,9 @@ class SendBitcoinsFrame(ArmoryFrame):
 
       try:
          utxoSelect = self.getUsableTxOutList()
-      except RuntimeError as e:
+      except (RuntimeError, BridgeError) as e:
          QtWidgets.QMessageBox.critical(self, self.tr('Coin Selection Failure'), \
-               self.tr('Coin selection failed with error: <b>%s<b/>' % e.message), \
+               self.tr('Coin selection failed with error: <b>%s<b/>' % str(e)), \
                QtWidgets.QMessageBox.Ok)
          return False
 

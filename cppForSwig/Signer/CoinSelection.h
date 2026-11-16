@@ -348,7 +348,7 @@ namespace Armory
          void resetRecipients(void);
          const RecipientMap& getRecipients(void) const { return recipients_; }
 
-         bool selectUTXOs(uint64_t fee, float fee_byte, unsigned flags);
+         void selectUTXOs(uint64_t fee, float fee_byte, unsigned flags);
          void processCustomUtxoList(
             std::vector<UTXO>& utxos,
             uint64_t fee, float fee_byte,
