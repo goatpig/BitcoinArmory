@@ -472,6 +472,8 @@ class DlgSetupManager(ArmoryDialog):
          params['satoshiBin'] = coreSettings['binpath']
          params['dbPath'] = dbSettings['dbPath']
          params['automateNode'] = coreSettings['automate']
+         params['dbInitMode'] = dbSettings['dbInitMode']
+         params['clearMempool'] = dbSettings['clearMempool']
       elif scenario == SCENARIO_REMOTE_PEER:
          params['peerKey'] = dbSettings['peerKey']
       elif scenario == SCENARIO_REMOTE_IP:
@@ -528,11 +530,14 @@ class DlgSetupManager(ArmoryDialog):
       satoshiBin = params.get('satoshiBin', '')
       dbDir = params.get('dbPath', '')
       automateNode = params.get('automateNode', False)
+      dbInitMode = params.get('dbInitMode', 'resume')
+      clearMempool = params.get('clearMempool', False)
 
       LOGINFO("automating db/node operations")
       result = TheBridge.dbSetup.initAutomationContext(
          satoshiDir=satoshiDir, satoshiBin=satoshiBin,
-         dbDir=dbDir, automateNode=automateNode, automateDb=True)
+         dbDir=dbDir, automateNode=automateNode, automateDb=True,
+         dbInitMode=dbInitMode, clearMempool=clearMempool)
 
       if result.success == False:
          LOGINFO("automation context init failed!")

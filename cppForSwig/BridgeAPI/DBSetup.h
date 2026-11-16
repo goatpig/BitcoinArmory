@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <filesystem>
+#include "bdmenums.h"
 
 namespace AsyncClient
 {
@@ -71,6 +72,8 @@ namespace Armory
          const std::filesystem::path dbDir_;
          const bool automateNode_;
          const bool automateDb_;
+         const BdmInitMode dbInitMode_;
+         const bool clearMempool_;
 
          std::shared_ptr<NetworkPeers::ClientStore> peers_;
          uint16_t dbPort_ = UINT16_MAX;
@@ -93,7 +96,8 @@ namespace Armory
             const std::filesystem::path&,
             const std::filesystem::path&,
             const std::filesystem::path&,
-            bool, bool
+            bool, bool,
+            BdmInitMode, bool
          );
 
          bool run(const CallbackFunc&);

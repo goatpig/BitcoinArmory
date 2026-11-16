@@ -783,9 +783,11 @@ AutomationContext::AutomationContext(
    const std::filesystem::path& satoshiDir,
    const std::filesystem::path& satoshiBin,
    const std::filesystem::path& dbDir,
-   bool automateNode, bool automateDb) :
+   bool automateNode, bool automateDb,
+   BdmInitMode dbInitMode, bool clearMempool) :
    satoshiDir_{satoshiDir}, satoshiBin_{satoshiBin}, dbDir_{dbDir},
-   automateNode_{automateNode}, automateDb_{automateDb}
+   automateNode_{automateNode}, automateDb_{automateDb},
+   dbInitMode_{dbInitMode}, clearMempool_{clearMempool}
 {}
 
 Network::port_t AutomationContext::getDbPort() const
@@ -942,6 +944,23 @@ void AutomationContext::automateDb()
 
       default:
          break;
+   }
+
+   switch (dbInitMode_)
+   {
+      case BdmInitMode::RESCAN:
+         args.emplace_back("--rescan");
+         break;
+
+      case BdmInitMode::REBUILD:
+         args.emplace_back("--rebuild");
+         break;
+
+      default:
+         break;
+   }
+   if (clearMempool_) {
+      args.emplace_back("--clear-mempool");
    }
 
    //envvars

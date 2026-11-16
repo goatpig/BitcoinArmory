@@ -709,19 +709,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       execAbout   = lambda: DlgHelpAbout(self).exec_()
 
       actAboutWindow  = self.createAction(self.tr('&About Armory...'), execAbout)
-      actClearMemPool = self.createAction(self.tr('Clear All Unconfirmed'), self.clearMemoryPool)
-      actRescanDB     = self.createAction(self.tr('Rescan Databases'), self.rescanNextLoad)
-      actRebuildDB    = self.createAction(self.tr('Rebuild and Rescan Databases'), self.rebuildNextLoad)
-      actRescanBalance = self.createAction(self.tr('Rescan Balance'), self.rescanBalanceNextLoad)
       actFactoryReset = self.createAction(self.tr('Factory Reset'), self.factoryReset)
 
       self.menusList[MENUS.Help].addAction(actAboutWindow)
       self.menusList[MENUS.Help].addSeparator()
-      self.menusList[MENUS.Help].addSeparator()
-      self.menusList[MENUS.Help].addAction(actClearMemPool)
-      self.menusList[MENUS.Help].addAction(actRescanBalance)
-      self.menusList[MENUS.Help].addAction(actRescanDB)
-      self.menusList[MENUS.Help].addAction(actRebuildDB)
       self.menusList[MENUS.Help].addAction(actFactoryReset)
 
       execMSHack = lambda: DlgSelectMultiSigOption(self,self).exec_()
@@ -1001,19 +992,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.closeForReal()
 
    ####################################################
-   def clearMemoryPool(self):
-      touchFile( os.path.join(ARMORY_HOME_DIR, 'clearmempool.flag') )
-      msg = self.tr(
-         'The next time you restart Armory, all unconfirmed transactions will '
-         'be cleared allowing you to retry any stuck transactions.')
-      if not self.doAutoBitcoind:
-         msg += self.tr(
-         '<br><br>Make sure you also restart Bitcoin Core '
-         '(or bitcoind) and let it synchronize again before you restart '
-         'Armory.  Doing so will clear its memory pool as well.')
-      QtWidgets.QMessageBox.information(self, self.tr('Memory Pool'), msg, QtWidgets.QMessageBox.Ok)
-
-   ####################################################
    def registerWidgetActivateTime(self, widget):
       # This is a bit of a hack, but it's a very isolated method to make
       # it easy to link widgets to my entropy accumulator
@@ -1135,41 +1113,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       allEntropy.write(source2.getvalue())
       allEntropy.write(source3)
       return HMAC256(b'Armory Entropy', allEntropy.getvalue())
-
-   ####################################################
-   def rescanNextLoad(self):
-      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Rescan?'), self.tr(
-         'The next time you restart Armory, it will rescan the blockchain '
-         'database, and reconstruct your wallet histories from scratch. '
-         'The rescan will take 10-60 minutes depending on your system. '
-         '<br><br> '
-         'Do you wish to force a rescan on the next Armory restart?'), \
-         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-      if reply==QtWidgets.QMessageBox.Yes:
-         touchFile( os.path.join(ARMORY_HOME_DIR, 'rescan.flag') )
-
-   ####################################################
-   def rebuildNextLoad(self):
-      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Rebuild?'), self.tr(
-         'The next time you restart Armory, it will rebuild and rescan '
-         'the entire blockchain database.  This operation can take between '
-         '30 minutes and 4 hours depending on your system speed. '
-         '<br><br>'
-         'Do you wish to force a rebuild on the next Armory restart?'), \
-         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-      if reply==QtWidgets.QMessageBox.Yes:
-         touchFile( os.path.join(ARMORY_HOME_DIR, 'rebuild.flag') )
-
-   ####################################################
-   def rescanBalanceNextLoad(self):
-      reply = QtWidgets.QMessageBox.warning(self, self.tr('Queue Balance Rescan?'), self.tr(
-         'The next time you restart Armory, it will rescan the balance of '
-         'your wallets. This operation typically takes less than a minute. '
-         '<br><br>'
-         'Do you wish to force a balance rescan on the next Armory restart?'), \
-         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-      if reply==QtWidgets.QMessageBox.Yes:
-         touchFile( os.path.join(ARMORY_HOME_DIR, 'rescanbalance.flag') )
 
    ####################################################
    def loadFailedManyTimesFunc(self, nFail):

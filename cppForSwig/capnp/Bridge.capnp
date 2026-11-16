@@ -274,6 +274,12 @@ struct DbSetupRequest {
 
    struct AutomationContext
    {
+      enum DbInitMode {
+         resume         @0;
+         rescan         @1;
+         rebuild        @2;
+      }
+
       satoshiDir        @0 : Text;
       satoshiBin        @1 : Text;
       dbDir             @2 : Text;
@@ -283,6 +289,10 @@ struct DbSetupRequest {
          automateDb     @4 : Void;
          automateNode   @5 : Void;
       }
+
+      #how the automated ArmoryDB starts
+      dbInitMode        @6 : DbInitMode;
+      clearMempool      @7 : Bool;
    }
 
    union {
