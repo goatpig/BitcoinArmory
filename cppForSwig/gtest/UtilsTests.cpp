@@ -20,6 +20,10 @@
 #include <filesystem>
 #include <cstring>
 
+#ifndef _WIN32
+#include <pwd.h>
+#include <unistd.h>
+#endif
 #include "TestUtils.h"
 #include <Utils/ArmoryConfig.h>
 #include <Utils/varint.h>
@@ -4572,6 +4576,45 @@ TEST_F(TypesTests, keys)
    EXPECT_EQ(Types::getBlockIDFromScrAddrKey(scrAddrKey1), blockId1);
    EXPECT_EQ(Types::getBlockIDFromScrAddrKey(scrAddrKey3), blockId2);
 }
+
+#ifndef _WIN32
+////////////////////////////////////////////////////////////////////////////////
+TEST(FileUtilsTests, UserHomePath_NoHome)
+{
+   /*
+   The default paths are built from HOME. Without it, or with it empty,
+   getUserHomePath falls back on the user's home folder from the password
+   database instead of building a path from a null pointer (or a relative
+   one from an empty string)
+   */
+   std::string home;
+   auto homePtr = std::getenv("HOME");
+   ASSERT_NE(homePtr, nullptr);
+   home = homePtr;
+
+   auto pw = getpwuid(getuid());
+   if (pw == nullptr || pw->pw_dir == nullptr) {
+      GTEST_SKIP() << "no password database entry for this user";
+   }
+   std::filesystem::path pwHome{pw->pw_dir};
+   ASSERT_TRUE(pwHome.is_absolute());
+
+   //put HOME back whatever happens below
+   struct RestoreHome {
+      const std::string& value;
+      ~RestoreHome() { setenv("HOME", value.c_str(), 1); }
+   } restoreHome{home};
+
+   unsetenv("HOME");
+   EXPECT_EQ(FileUtils::getUserHomePath(), pwHome);
+
+   setenv("HOME", "", 1);
+   EXPECT_EQ(FileUtils::getUserHomePath(), pwHome);
+
+   setenv("HOME", home.c_str(), 1);
+   EXPECT_EQ(FileUtils::getUserHomePath(), std::filesystem::path{home});
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 TEST(FileCopyTests, XorPartialChunk)
