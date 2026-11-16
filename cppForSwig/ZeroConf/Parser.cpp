@@ -1490,7 +1490,10 @@ void ZeroConfContainer::shutdown()
    }
    zcWatcherQueue_.terminate();
    zcPreprocessQueue_->terminate();
-   updateBatch_.terminate();
+
+   //let the db writer thread finish the batches already queued (zc mined
+   //by the last block are deleted that way) instead of dropping them
+   updateBatch_.completed();
 
    for (auto& parser : parserThreads_) {
       if (parser.joinable()) {
