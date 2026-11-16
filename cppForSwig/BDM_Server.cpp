@@ -114,6 +114,27 @@ namespace {
 
       switch (request.which())
       {
+         case BdvRequest::Which::GET_TXS_BY_HASH:
+         case BdvRequest::Which::GET_TXS_BY_KEY:
+         case BdvRequest::Which::GET_TXIOS:
+         {
+            //these read the chain and the db, reject them until the bdm is
+            //ready. Wallet registration and goOnline are queued until then
+            if (bdv->bdm()->waitUntilReady(0ms) != BDMState::Ready) {
+               auto builder = ReplyBuilder::getNew(bdv);
+               prepareReply(builder);
+               builder.setError("bdm is not ready");
+               return builder;
+            }
+            break;
+         }
+
+         default:
+            break;
+      }
+
+      switch (request.which())
+      {
          case BdvRequest::Which::REGISTER_WALLET:
          {
             auto walletRequest = request.getRegisterWallet();
@@ -426,7 +447,187 @@ namespace {
             break;
          }
 
-         case StaticRequest::Which::RPC_BROADCAST:
+         case StaticRequest::Which::GET_NODE_STATUS:
+         {
+            auto nodeStatus = clients->bdm()->getNodeStatus();
+            auto nodeReply = staticReply.initGetNodeStatus();
+            nodeReply.setNode(
+               (Codec::Types::NodeStatus::NodeState)nodeStatus->state);
+            nodeReply.setIsSW(nodeStatus->segWitEnabled);
+            nodeReply.setRpc(
+               (Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState);
+
+            auto chainNotif = nodeReply.initChain();
+            chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
+               nodeStatus->chainStatus.state);
+            chainNotif.setBlockSpeed(nodeStatus->chainStatus.blockSpeed);
+            chainNotif.setEta(nodeStatus->chainStatus.etaSeconds);
+            chainNotif.setProgress(nodeStatus->chainStatus.progressPct);
+            chainNotif.setBlocksLeft(nodeStatus->chainStatus.blocksLeft);
+            break;
+         }
+
+         default:
+            reply.setError("invalid static request");
+            reply.setSuccess(false);
+      }
+      return result;
+   }
+
+   ////
+   std::unique_ptr<capnp::MessageBuilder> parseChainRequest(
+      ChainRequest::Reader& request, unsigned msgId, Clients* clients,
+      Types::BdvId bdvId)
+   {
+      auto result = std::make_unique<capnp::MallocMessageBuilder>();
+      auto reply = result->initRoot<Codec::BDV::Reply>();
+      reply.setMsgId(msgId);
+
+      //these requests need the chain and the db, reject them until the
+      //bdm is ready
+      if (clients->bdm()->waitUntilReady(0ms) != BDMState::Ready) {
+         reply.setSuccess(false);
+         reply.setError("bdm is not ready");
+         return result;
+      }
+
+      reply.setSuccess(true);
+      auto chainReply = reply.initChain();
+
+      switch (request.which())
+      {
+         case ChainRequest::Which::GET_FEE_SCHEDULE:
+         {
+            try {
+               std::string strat = request.getGetFeeSchedule();
+               auto nodePtr = clients->bdm()->nodeRPC;
+               auto feeSchedule = nodePtr->getFeeSchedule(strat);
+
+               auto count = 0;
+               for (const auto& fee : feeSchedule.estimates) {
+                  if (fee.second.error.empty()) {
+                     ++count;
+                  }
+               }
+               if (count == 0) {
+                  throw std::runtime_error("could not fetch valid fees");
+               }
+
+               auto capnFeeSchedule = chainReply.initGetFeeSchedule(count);
+               for (const auto& fee : feeSchedule.estimates) {
+                  if (!fee.second.error.empty()) {
+                     continue;
+                  }
+                  auto capnFee = capnFeeSchedule[count++];
+                  capnFee.setTarget(fee.first);
+                  capnFee.setFeeByte(fee.second.feeByte);
+                  capnFee.setSmartFee(fee.second.smartFee);
+               }
+            } catch (const std::exception& e) {
+               reply.setError(e.what());
+               reply.setSuccess(false);
+            }
+            break;
+         }
+
+         case ChainRequest::Which::GET_HEADERS_BY_HEIGHT:
+         {
+            auto bcPtr = clients->bdm()->blockchain();
+            if (bcPtr == nullptr) {
+               reply.setSuccess(false);
+               reply.setError("invalid bcPtr");
+               break;
+            }
+
+            auto headersRequest = request.getGetHeadersByHeight();
+            std::vector<std::shared_ptr<BlockHeader>> headers;
+            headers.reserve(headersRequest.size());
+            for (const auto height : headersRequest) {
+               try {
+                  auto header = bcPtr->getHeaderByHeight(height);
+                  headers.emplace_back(std::move(header));
+               } catch (const std::exception&) {
+                  continue;
+               }
+            }
+
+            auto capnHeaders = chainReply.initGetHeadersByHeight(headers.size());
+            unsigned i = 0;
+            for (const auto& header : headers) {
+               auto capnHeader = capnHeaders[i++];
+               const auto& thisHash = header->getThisHash();
+               capnHeader.setThisHash(capnp::Data::Builder(
+                  (uint8_t*)thisHash.data, 32));
+               const auto& prevHash = header->getPrevHash();
+               capnHeader.setPrevHash(capnp::Data::Builder(
+                  (uint8_t*)prevHash.data, 32));
+
+               capnHeader.setTimestamp(header->getTimestamp());
+               capnHeader.setBlockSize(header->getBlockSize());
+               capnHeader.setNumTxs(header->getNumTx());
+               capnHeader.setHeight(header->getBlockHeight());
+               capnHeader.setBlockId(header->getUniqueID());
+               capnHeader.setMainBranch(header->isMainBranch());
+            }
+            break;
+         }
+
+         case ChainRequest::Which::GET_HEADERS_BY_ID:
+         {
+            auto bcPtr = clients->bdm()->blockchain();
+            if (bcPtr == nullptr) {
+               reply.setSuccess(false);
+               reply.setError("invalid bcPtr");
+               break;
+            }
+
+            auto headersRequest = request.getGetHeadersById();
+            std::vector<std::shared_ptr<BlockHeader>> headers;
+            headers.reserve(headersRequest.size());
+            for (const auto blockId : headersRequest) {
+               try {
+                  auto header = bcPtr->getHeaderById(blockId);
+                  headers.emplace_back(std::move(header));
+               } catch (const std::exception&) {
+                  continue;
+               }
+            }
+
+            auto capnHeaders = chainReply.initGetHeadersById(headers.size());
+            unsigned i = 0;
+            for (const auto& header : headers) {
+               auto capnHeader = capnHeaders[i++];
+               const auto& thisHash = header->getThisHash();
+               capnHeader.setThisHash(capnp::Data::Builder(
+                  (uint8_t*)thisHash.data, 32));
+               const auto& prevHash = header->getPrevHash();
+               capnHeader.setPrevHash(capnp::Data::Builder(
+                  (uint8_t*)prevHash.data, 32));
+
+               capnHeader.setTimestamp(header->getTimestamp());
+               capnHeader.setBlockSize(header->getBlockSize());
+               capnHeader.setNumTxs(header->getNumTx());
+               capnHeader.setHeight(header->getBlockHeight());
+               capnHeader.setBlockId(header->getUniqueID());
+               capnHeader.setMainBranch(header->isMainBranch());
+            }
+            break;
+         }
+
+         case ChainRequest::Which::GET_TOP_BLOCK_HEIGHT:
+         {
+            auto bcPtr = clients->bdm()->blockchain();
+            if (bcPtr != nullptr) {
+               auto top = bcPtr->top();
+               chainReply.setGetTopBlockHeight(top->getBlockHeight());
+            } else {
+               reply.setSuccess(false);
+               reply.setError("invalid bcPtr");
+            }
+            break;
+         }
+
+         case ChainRequest::Which::RPC_BROADCAST:
          {
             auto bdv = clients->get(bdvId);
             if (bdv == nullptr) {
@@ -452,7 +653,7 @@ namespace {
             break;
          }
 
-         case StaticRequest::Which::BROADCAST:
+         case ChainRequest::Which::BROADCAST:
          {
             auto txList = request.getBroadcast();
             std::vector<BinaryDataRef> rawZcVec;
@@ -464,159 +665,8 @@ namespace {
             return nullptr;
          }
 
-         case StaticRequest::Which::GET_NODE_STATUS:
-         {
-            auto nodeStatus = clients->bdm()->getNodeStatus();
-            auto nodeReply = staticReply.initGetNodeStatus();
-            nodeReply.setNode(
-               (Codec::Types::NodeStatus::NodeState)nodeStatus->state);
-            nodeReply.setIsSW(nodeStatus->segWitEnabled);
-            nodeReply.setRpc(
-               (Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState);
-
-            auto chainNotif = nodeReply.initChain();
-            chainNotif.setChainState((Codec::Types::ChainStatus::ChainState)
-               nodeStatus->chainStatus.state);
-            chainNotif.setBlockSpeed(nodeStatus->chainStatus.blockSpeed);
-            chainNotif.setEta(nodeStatus->chainStatus.etaSeconds);
-            chainNotif.setProgress(nodeStatus->chainStatus.progressPct);
-            chainNotif.setBlocksLeft(nodeStatus->chainStatus.blocksLeft);
-            break;
-         }
-
-         case StaticRequest::Which::GET_FEE_SCHEDULE:
-         {
-            try {
-               std::string strat = request.getGetFeeSchedule();
-               auto nodePtr = clients->bdm()->nodeRPC;
-               auto feeSchedule = nodePtr->getFeeSchedule(strat);
-
-               auto count = 0;
-               for (const auto& fee : feeSchedule.estimates) {
-                  if (fee.second.error.empty()) {
-                     ++count;
-                  }
-               }
-               if (count == 0) {
-                  throw std::runtime_error("could not fetch valid fees");
-               }
-
-               auto capnFeeSchedule = staticReply.initGetFeeSchedule(count);
-               for (const auto& fee : feeSchedule.estimates) {
-                  if (!fee.second.error.empty()) {
-                     continue;
-                  }
-                  auto capnFee = capnFeeSchedule[count++];
-                  capnFee.setTarget(fee.first);
-                  capnFee.setFeeByte(fee.second.feeByte);
-                  capnFee.setSmartFee(fee.second.smartFee);
-               }
-            } catch (const std::exception& e) {
-               reply.setError(e.what());
-               reply.setSuccess(false);
-            }
-            break;
-         }
-
-         case StaticRequest::Which::GET_HEADERS_BY_HEIGHT:
-         {
-            auto bcPtr = clients->bdm()->blockchain();
-            if (bcPtr == nullptr) {
-               reply.setSuccess(false);
-               reply.setError("invalid bcPtr");
-               break;
-            }
-
-            auto headersRequest = request.getGetHeadersByHeight();
-            std::vector<std::shared_ptr<BlockHeader>> headers;
-            headers.reserve(headersRequest.size());
-            for (const auto height : headersRequest) {
-               try {
-                  auto header = bcPtr->getHeaderByHeight(height);
-                  headers.emplace_back(std::move(header));
-               } catch (const std::exception&) {
-                  continue;
-               }
-            }
-
-            auto capnHeaders = staticReply.initGetHeadersByHeight(headers.size());
-            unsigned i = 0;
-            for (const auto& header : headers) {
-               auto capnHeader = capnHeaders[i++];
-               const auto& thisHash = header->getThisHash();
-               capnHeader.setThisHash(capnp::Data::Builder(
-                  (uint8_t*)thisHash.data, 32));
-               const auto& prevHash = header->getPrevHash();
-               capnHeader.setPrevHash(capnp::Data::Builder(
-                  (uint8_t*)prevHash.data, 32));
-
-               capnHeader.setTimestamp(header->getTimestamp());
-               capnHeader.setBlockSize(header->getBlockSize());
-               capnHeader.setNumTxs(header->getNumTx());
-               capnHeader.setHeight(header->getBlockHeight());
-               capnHeader.setBlockId(header->getUniqueID());
-               capnHeader.setMainBranch(header->isMainBranch());
-            }
-            break;
-         }
-
-         case StaticRequest::Which::GET_HEADERS_BY_ID:
-         {
-            auto bcPtr = clients->bdm()->blockchain();
-            if (bcPtr == nullptr) {
-               reply.setSuccess(false);
-               reply.setError("invalid bcPtr");
-               break;
-            }
-
-            auto headersRequest = request.getGetHeadersById();
-            std::vector<std::shared_ptr<BlockHeader>> headers;
-            headers.reserve(headersRequest.size());
-            for (const auto blockId : headersRequest) {
-               try {
-                  auto header = bcPtr->getHeaderById(blockId);
-                  headers.emplace_back(std::move(header));
-               } catch (const std::exception&) {
-                  continue;
-               }
-            }
-
-            auto capnHeaders = staticReply.initGetHeadersById(headers.size());
-            unsigned i = 0;
-            for (const auto& header : headers) {
-               auto capnHeader = capnHeaders[i++];
-               const auto& thisHash = header->getThisHash();
-               capnHeader.setThisHash(capnp::Data::Builder(
-                  (uint8_t*)thisHash.data, 32));
-               const auto& prevHash = header->getPrevHash();
-               capnHeader.setPrevHash(capnp::Data::Builder(
-                  (uint8_t*)prevHash.data, 32));
-
-               capnHeader.setTimestamp(header->getTimestamp());
-               capnHeader.setBlockSize(header->getBlockSize());
-               capnHeader.setNumTxs(header->getNumTx());
-               capnHeader.setHeight(header->getBlockHeight());
-               capnHeader.setBlockId(header->getUniqueID());
-               capnHeader.setMainBranch(header->isMainBranch());
-            }
-            break;
-         }
-
-         case StaticRequest::Which::GET_TOP_BLOCK_HEIGHT:
-         {
-            auto bcPtr = clients->bdm()->blockchain();
-            if (bcPtr != nullptr) {
-               auto top = bcPtr->top();
-               staticReply.setGetTopBlockHeight(top->getBlockHeight());
-            } else {
-               reply.setSuccess(false);
-               reply.setError("invalid bcPtr");
-            }
-            break;
-         }
-
          default:
-            reply.setError("invalid static request");
+            reply.setError("invalid chain request");
             reply.setSuccess(false);
       }
       return result;
@@ -1568,15 +1618,32 @@ void Clients::parseStandAlonePayload(std::shared_ptr<BDV_Payload> payloadPtr)
    auto capnReader = msgReader->getReader();
    try {
       auto request = capnReader->getRoot<Codec::BDV::Request>();
-      if (!request.isStatic()) {
-         //we only allow static requests in here
-         return;
+      std::unique_ptr<capnp::MessageBuilder> builderPtr;
+      switch (request.which())
+      {
+         case Codec::BDV::Request::Which::STATIC:
+         {
+            auto staticRequest = request.getStatic();
+            builderPtr = parseStaticRequest(
+               staticRequest, request.getMsgId(), this,
+               payloadPtr->getBdvID(), payloadPtr->getPubkey());
+            break;
+         }
+
+         case Codec::BDV::Request::Which::CHAIN:
+         {
+            auto chainRequest = request.getChain();
+            builderPtr = parseChainRequest(
+               chainRequest, request.getMsgId(), this,
+               payloadPtr->getBdvID());
+            break;
+         }
+
+         default:
+            //we only allow static and chain requests in here
+            return;
       }
 
-      auto staticRequest = request.getStatic();
-      auto builderPtr = parseStaticRequest(
-         staticRequest, request.getMsgId(), this,
-         payloadPtr->getBdvID(), payloadPtr->getPubkey());
       if (builderPtr != nullptr) {
          WebSocketServer::write(payloadPtr->getBdvID(),
             std::make_unique<Network::WritePayload_Capnp>(
@@ -1840,6 +1907,21 @@ std::unique_ptr<Network::Socket_WritePayload> Clients::processCommand(
          auto builderPtr = parseStaticRequest(
             staticRequest, request.getMsgId(), this,
             payload->getBdvID(), payload->getPubkey());
+         if (builderPtr != nullptr) {
+            return std::make_unique<Network::WritePayload_Capnp>(
+               payload->getMessageID(), std::move(builderPtr),
+               std::vector<uint8_t>{}
+            );
+         }
+         break;
+      }
+
+      case Codec::BDV::Request::Which::CHAIN:
+      {
+         //process chain command
+         auto chainRequest = request.getChain();
+         auto builderPtr = parseChainRequest(
+            chainRequest, request.getMsgId(), this, payload->getBdvID());
          if (builderPtr != nullptr) {
             return std::make_unique<Network::WritePayload_Capnp>(
                payload->getMessageID(), std::move(builderPtr),
