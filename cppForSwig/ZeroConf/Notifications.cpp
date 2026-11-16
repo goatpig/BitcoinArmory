@@ -48,6 +48,20 @@ ZeroConfCallbacks_BDV::ZeroConfCallbacks_BDV(Clients* clientsPtr) :
 
 ZeroConfCallbacks_BDV::~ZeroConfCallbacks_BDV()
 {
+   shutdown();
+}
+
+void ZeroConfCallbacks_BDV::shutdown()
+{
+   /*
+   The request thread holds a BdvClient while it builds that bdv's
+   notification, and a BdvClient keeps the ZeroConfContainer (the owner of
+   this object) alive. Once the bdv is unregistered and the BDM has
+   released the container, that thread can drop the last reference and
+   run this object's destructor on itself, where the join cannot work.
+   The container calls this from its own shutdown, so the thread is
+   joined while the BDM still owns the container.
+   */
    requestQueue_.terminate();
    if (requestThread_.joinable()) {
       requestThread_.join();
