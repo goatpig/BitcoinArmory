@@ -2355,7 +2355,19 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 65 * COIN);
 
    //pull ZC from DB, verify it's carrying the proper data
-   std::this_thread::sleep_for(100ms);
+   /*
+   The zc is written to the db on its own thread (updateZCinDB), and the
+   new zc notification doesn't wait on that write. Wait for it to land
+   before opening the read transaction below: it would pin the snapshot
+   this loop is waiting on. The checks below report a timeout.
+   */
+   for (unsigned i = 0; i < 500; i++) {
+      StoredTx stx;
+      if (iface_->getStoredZC(stx, Types::constructZCKey(0))) {
+         break;
+      }
+      std::this_thread::sleep_for(10ms);
+   }
    auto dbtx = iface_->beginTransaction(
       DB_SELECT::ZERO_CONF, LMDB::Mode::ReadOnly);
    StoredTx zcStx;
@@ -2442,6 +2454,17 @@ TEST_F(ZeroConfTests_FullNode, Load3Blocks_ZC_Plus3)
    EXPECT_EQ(DBTestUtils::getScrAddrBalance(TestChain::scrAddrC, bdm), 20 * COIN);
 
    //Tx is now in a block, ZC should be gone from DB
+   /*
+   The mined zc is deleted from the db on that same thread, and the new
+   block notification doesn't wait on the delete either.
+   */
+   for (unsigned i = 0; i < 500; i++) {
+      StoredTx stx;
+      if (!iface_->getStoredZC(stx, zcKey)) {
+         break;
+      }
+      std::this_thread::sleep_for(10ms);
+   }
    dbtx = move(
       iface_->beginTransaction(DB_SELECT::ZERO_CONF, LMDB::Mode::ReadWrite));
    StoredTx zcStx4;
