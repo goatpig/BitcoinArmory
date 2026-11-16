@@ -224,6 +224,9 @@ namespace Armory
             std::map<Types::TxHash, std::shared_ptr<WatcherTxBody>>&) = 0;
          virtual void pushZcError(Types::BdvId, const BinaryData&,
             ArmoryErrorCodes, const std::string&) = 0;
+
+         //stops the threads of the callback object, if any
+         virtual void shutdown(void) {}
       };
 
       class ZeroConfCallbacks_BDV : public ZeroConfCallbacks
@@ -281,6 +284,7 @@ namespace Armory
       public:
          ZeroConfCallbacks_BDV(Clients*);
          ~ZeroConfCallbacks_BDV(void);
+         void shutdown(void) override;
 
          std::set<Types::BdvId> hasScrAddr(const Types::ScrAddr&) const override;
          void pushZcError(Types::BdvId, const Types::TxHash&,

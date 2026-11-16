@@ -1497,6 +1497,11 @@ void ZeroConfContainer::shutdown()
          parser.join();
       }
    }
+
+   //the parsers are done pushing notifications, stop the bdv callbacks
+   if (bdvCallbacks_ != nullptr) {
+      bdvCallbacks_->shutdown();
+   }
 }
 
 ////////

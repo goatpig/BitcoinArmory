@@ -30,6 +30,7 @@
 #include <Network/WebSocketClient.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
+#include <ZeroConf/Notifications.h>
 #include <ZeroConf/Utils.h>
 
 #include "BDM_mainthread.h"
@@ -1961,6 +1962,84 @@ TEST_F(BlockUtilsBare, ShutdownDuringNodeSync)
    auto diff = std::chrono::system_clock::now() - now;
    ASSERT_LE(diff, 1s);
    ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::InitializationFailed);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+TEST_F(BlockUtilsBare, ShutdownStopsZcCallbacks)
+{
+   /*
+   The zc callbacks can own a thread that holds a reference to the zc
+   container, so the container has to stop them from its own shutdown,
+   on the thread that shuts the BDM down and while the BDM still owns
+   the container: if that thread dropped the last reference instead, the
+   callbacks would be destroyed on it and could not join it.
+   */
+   struct ProbeState
+   {
+      std::atomic<int> shutdownCalls{0};
+      std::atomic<bool> containerOwnedByBdm{false};
+      std::atomic<bool> destroyed{false};
+      std::thread::id shutdownThread;
+   };
+
+   class ProbeCallbacks : public ZeroConf::ZeroConfCallbacks
+   {
+      std::shared_ptr<ProbeState> state_;
+      std::weak_ptr<BlockDataManager> bdm_;
+
+   public:
+      ProbeCallbacks(std::shared_ptr<ProbeState> state,
+         std::weak_ptr<BlockDataManager> bdm) :
+         state_(std::move(state)), bdm_(std::move(bdm))
+      {}
+
+      ~ProbeCallbacks(void) override
+      {
+         state_->destroyed.store(true);
+      }
+
+      std::set<Types::BdvId> hasScrAddr(const Types::ScrAddr&) const override
+      {
+         return {};
+      }
+
+      void pushZcNotification(
+         std::shared_ptr<ZeroConf::MempoolSnapshot>,
+         std::shared_ptr<ZeroConf::KeyAddrMap>,
+         std::map<Types::BdvId, ZeroConf::ParsedZCData>,
+         Types::BdvId,
+         std::map<Types::TxHash, std::shared_ptr<ZeroConf::WatcherTxBody>>&) override
+      {}
+
+      void pushZcError(Types::BdvId, const Types::TxHash&,
+         ArmoryErrorCodes, const std::string&) override
+      {}
+
+      void shutdown(void) override
+      {
+         auto bdm = bdm_.lock();
+         state_->containerOwnedByBdm.store(
+            bdm != nullptr && bdm->zeroConfCont() != nullptr);
+         state_->shutdownThread = std::this_thread::get_id();
+         state_->shutdownCalls.fetch_add(1);
+      }
+   };
+
+   auto state = std::make_shared<ProbeState>();
+   theBDMt_->bdm()->registerZcCallbacks(
+      std::make_unique<ProbeCallbacks>(state, theBDMt_->bdm()));
+
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+   EXPECT_EQ(state->shutdownCalls.load(), 0);
+
+   theBDMt_->shutdown();
+   EXPECT_EQ(state->shutdownCalls.load(), 1);
+   EXPECT_TRUE(state->containerOwnedByBdm.load());
+   EXPECT_EQ(state->shutdownThread, std::this_thread::get_id());
+
+   //nothing else holds the container: the BDM cleanup destroyed it here
+   EXPECT_TRUE(state->destroyed.load());
 }
 
 /* this is meant to spit out test chain data for debug purposes */
