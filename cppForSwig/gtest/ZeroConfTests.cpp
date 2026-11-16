@@ -4373,6 +4373,28 @@ TEST_F(ZeroConfTests_FullNode, DBBloat)
       ASSERT_EQ(zc2Id, 1);
    }
 
+   /*
+   The zc is written to the db on its own thread (updateZCinDB), and the
+   new zc notification doesn't wait on that write. Wait for mockZC2 to
+   land before checking the db. Update batches are written in order, one
+   db transaction each, so any entry written for mockZC1 is visible by
+   then too. Poll before opening the read transaction below: it would
+   pin the snapshot this loop is waiting on.
+   */
+   {
+      auto zcKey2 = Types::constructZCKey(zc2Id);
+      bool inDb = false;
+      for (unsigned i = 0; i < 500 && !inDb; i++) {
+         StoredTx stx;
+         inDb = bdm->getIFace()->getStoredZC(stx, zcKey2) &&
+            stx.getSerializedTx() == mockZC2;
+         if (!inDb) {
+            std::this_thread::sleep_for(10ms);
+         }
+      }
+      ASSERT_TRUE(inDb);
+   }
+
    //check db
    {
       auto db = bdm->getIFace();
