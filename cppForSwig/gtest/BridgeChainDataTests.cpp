@@ -234,15 +234,22 @@ protected:
       }
    }
 
-   void restartDb(bool clearMempool)
+   void dropDb()
    {
-      //the db goes away, comes back on the same blocks, the bridge
-      //reconnects to it
+      //the db goes away: the bridge drops its bdv, which purges the txio
+      //cache, then sends DISCONNECTED
       WebSocketServer::shutdown();
       waitOnDisconnected();
       if (wsServerThr_.joinable()) {
          wsServerThr_.join();
       }
+   }
+
+   void restartDb(bool clearMempool)
+   {
+      //the db goes away, comes back on the same blocks, the bridge
+      //reconnects to it
+      dropDb();
       theBDMt_->shutdown();
       delete theBDMt_;
 
@@ -1284,6 +1291,28 @@ TEST_F(BridgeChainDataTests, TxIOCachePurge_DropBDV)
    std::pair<bool, std::string> feeStatus;
    ASSERT_NO_THROW(feeStatus = getFeeForMaxValStatus(csId, 1.0f));
    EXPECT_TRUE(feeStatus.first) << feeStatus.second;
+}
+
+TEST_F(BridgeChainDataTests, TxIOCachePurge_SelectionBeforeDrop)
+{
+   loadWallets({walletId_BCDE_});
+   TestUtils::setBlocks({ "0", "1", "2", "3", "4" }, blk0dat_);
+   ASSERT_NO_FATAL_FAILURE(goOnlineAt(4));
+
+   //a coin selection set up online keeps the spendable balance it got
+   auto csId = getNewCoinSelector(bridge_, walletId_BCDE_, accountId_BCDE_, 4);
+   ASSERT_FALSE(csId.empty());
+
+   /* test starts here */
+
+   ASSERT_NO_FATAL_FAILURE(dropDb());
+
+   //the fee to spend it all asks the purged cache for utxos to cover that
+   //balance and gets none: the bridge replies with the error
+   std::pair<bool, std::string> feeStatus;
+   ASSERT_NO_THROW(feeStatus = getFeeForMaxValStatus(csId, 1.0f));
+   EXPECT_FALSE(feeStatus.first);
+   EXPECT_EQ(feeStatus.second, "could not fetch enough utxos");
 }
 
 namespace
