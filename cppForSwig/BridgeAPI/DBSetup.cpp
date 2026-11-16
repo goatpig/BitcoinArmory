@@ -199,7 +199,11 @@ namespace {
    instance_t INVALID_INSTANCE = -1;
 
    std::vector<std::string_view> satoshiDirCandidates{
+#ifdef __APPLE__
+      "Library/Application Support/Bitcoin"sv
+#else
       ".bitcoin"sv
+#endif
    };
    std::vector<std::string_view> satoshiBinCandidates{
       "/usr/bin"sv,

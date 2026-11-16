@@ -352,6 +352,7 @@ elif OS_MACOSX:
    platform.mac_ver()
    OS_NAME         = 'MacOSX'
    OS_VARIANT      = platform.mac_ver()
+   USER_HOME_DIR   = os.path.expanduser('~/Library/Application Support')
 
    if BTC_HOME_DIR == '':
       BTC_HOME_DIR = os.path.join(USER_HOME_DIR, 'Bitcoin')
