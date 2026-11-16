@@ -502,11 +502,12 @@ namespace {
                }
 
                auto capnFeeSchedule = staticReply.initGetFeeSchedule(count);
+               unsigned i=0;
                for (const auto& fee : feeSchedule.estimates) {
                   if (!fee.second.error.empty()) {
                      continue;
                   }
-                  auto capnFee = capnFeeSchedule[count++];
+                  auto capnFee = capnFeeSchedule[i++];
                   capnFee.setTarget(fee.first);
                   capnFee.setFeeByte(fee.second.feeByte);
                   capnFee.setSmartFee(fee.second.smartFee);

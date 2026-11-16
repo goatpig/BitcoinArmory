@@ -2990,6 +2990,60 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
    cv.notify_all();
 }
 
+TEST_F(BlockUtilsBareWithServer, GetFeeSchedule)
+{
+   //start the WS server
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   startWSServer(nullptr);
+
+   //start bdm
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   //connect to server
+   auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+   /* test starts here */
+   //the mocked node has 4 estimates, target 6 carries an error
+   std::promise<Node::FeeSchedule> prom;
+   auto fut = prom.get_future();
+   bdvObj->getFeeSchedule("CONSERVATIVE",
+      [&prom](ReturnMessage<Node::FeeSchedule> result){
+         try {
+            prom.set_value(result.get());
+         } catch (const ClientMessageError&) {
+            prom.set_exception(std::current_exception());
+         }
+      });
+   ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+   auto schedule = fut.get();
+
+   //the 3 valid estimates come through with their values
+   ASSERT_EQ(schedule.estimates.size(), 3U);
+   EXPECT_EQ(schedule.estimates.count(6), 0U);
+
+   ASSERT_EQ(schedule.estimates.count(2), 1U);
+   EXPECT_TRUE(schedule.estimates.at(2).smartFee);
+   EXPECT_FLOAT_EQ(schedule.estimates.at(2).feeByte, 0.0002f);
+
+   ASSERT_EQ(schedule.estimates.count(3), 1U);
+   EXPECT_TRUE(schedule.estimates.at(3).smartFee);
+   EXPECT_FLOAT_EQ(schedule.estimates.at(3).feeByte, 0.00015f);
+
+   ASSERT_EQ(schedule.estimates.count(10), 1U);
+   EXPECT_FALSE(schedule.estimates.at(10).smartFee);
+   EXPECT_FLOAT_EQ(schedule.estimates.at(10).feeByte, 0.0001f);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////

@@ -1101,7 +1101,14 @@ int NodeRPC_UnitTest::broadcastTx(const BinaryDataRef& rawTx, std::string&)
 
 Node::FeeSchedule NodeRPC_UnitTest::getFeeSchedule(const std::string&)
 {
-   throw std::runtime_error("should never get here");
+   //canned schedule, target 6 carries an estimatesmartfee error
+   Node::FeeSchedule schedule;
+   schedule.estimates.emplace(2, Node::FeeEstimate{ true, 0.0002f, {} });
+   schedule.estimates.emplace(3, Node::FeeEstimate{ true, 0.00015f, {} });
+   schedule.estimates.emplace(6, Node::FeeEstimate{
+      true, -1.0f, "Insufficient data or no feerate found" });
+   schedule.estimates.emplace(10, Node::FeeEstimate{ false, 0.0001f, {} });
+   return schedule;
 }
 
 Node::FeeEstimate NodeRPC_UnitTest::getFeeByte(
