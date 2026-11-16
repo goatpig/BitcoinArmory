@@ -45,6 +45,7 @@ struct RegistrationBatch;
 struct RpcBroadcastPacket
 {
    BdvPtr bdvPtr_;
+   Armory::Types::BdvId bdvId_;
    std::shared_ptr<BinaryData> rawTx_;
    std::set<BdvPtr> extraRequestors_;
 };

@@ -122,7 +122,7 @@ public:
    ClientConnection(struct lws*, uint64_t,
       std::unique_ptr<Armory::NetworkPeers::PeerStoreView>, bool);
 
-   void closeConnection(void);
+   void closeConnection(WebSocketServer*);
    void processReadQueue(std::shared_ptr<Clients>, WebSocketServer*);
    bool isMaster(void) const;
 };
@@ -155,6 +155,9 @@ private:
    std::set<struct lws*> pendingWrites_;
    std::set<struct lws*>::const_iterator pendingWritesIter_;
 
+   //ids of the connections to close, filled by closeConnection
+   Armory::Threading::Queue<uint64_t> closeQueue_;
+
    //default to 2-way auth
    bool oneWayAuth_ = false;
    std::atomic<bool> masterIsConnected_;
@@ -168,6 +171,7 @@ private:
    void closeClientConnection(uint64_t);
    void clientInterruptThread(void);
    void updateWriteMap(void);
+   void closeDroppedConnections(void);
    void writeToSocket(struct lws*, Armory::Network::SerializedMessage&);
 
    static WebSocketServer* getInstance(void);

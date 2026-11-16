@@ -419,7 +419,8 @@ void WebSocketMessagePartial::reset()
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessagePartial::parsePacket(BinaryData& packet)
 {
-   if (packet.empty()) {
+   //a packet carries at least its size (4 bytes) and its type (1 byte)
+   if (packet.getSize() < 5) {
       return false;
    }
 
@@ -484,7 +485,7 @@ bool WebSocketMessagePartial::parseSinglePacket(BinaryData& packet)
    if (myType_ == SerializedType::Undefined) {
       myType_ = SerializedType::Single;
    } else if (myType_ != SerializedType::Single) {
-      throw std::runtime_error("message type mismatch");
+      return false;
    }
 
    packets_.emplace(0, std::move(packet));
@@ -696,10 +697,16 @@ std::unique_ptr<CapnpReader> WebSocketMessagePartial::getReader() const
 ///////////////////////////////////////////////////////////////////////////////
 bool WebSocketMessagePartial::isReady() const
 {
-   if (packetCount_ == 0) {
+   if (packetCount_ == 0 || packets_.size() != packetCount_) {
       return false;
    }
-   return packets_.size() == packetCount_;
+
+   /*
+   Packet ids have to run from 0 to packetCount_ - 1, the readers index
+   their buffers with them. The map holds packetCount_ distinct ids in
+   order, it is enough that the last one is packetCount_ - 1.
+   */
+   return packets_.rbegin()->first == packetCount_ - 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -717,7 +724,8 @@ ArmoryAEAD::BIP151_PayloadType WebSocketMessagePartial::readPacketType(
    const BinaryDataRef& bdr)
 {
    if (bdr.getSize() < 5) {
-      throw std::runtime_error("packet is too small to be serialized fragment");
+      //too short to carry a type
+      return ArmoryAEAD::BIP151_PayloadType::Undefined;
    } else if (bdr.getSize() < PAYLOAD_HEADER) {
       return (ArmoryAEAD::BIP151_PayloadType)bdr.getPtr()[4];
    } else {

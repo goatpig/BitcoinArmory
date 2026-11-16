@@ -28,12 +28,21 @@
 #include <Wallets/AuthorizedPeers.h>
 #include <Signer/ScriptSpender.h>
 #include <Network/WebSocketClient.h>
+#include <Network/WebSocketMessage.h>
+#include <Utils/BIP15x_Handshake.h>
+#include <Network/SocketWritePayload.h>
 #include <BlockchainDatabase/BlockchainData.h>
 #include <ZeroConf/Parser.h>
 #include <ZeroConf/Utils.h>
+#include <ZeroConf/Notifications.h>
+#include <BlockchainDatabase/ScrAddrFilter.h>
 
 #include "BDM_mainthread.h"
 #include "Server.h"
+
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "capnp/BDV.capnp.h"
 
 using namespace std::string_view_literals;
 using namespace std::chrono_literals;
@@ -2988,6 +2997,1117 @@ TEST_F(BlockUtilsBareWithServer, WSClientCleanup_AnsweredRequest)
       release = true;
    }
    cv.notify_all();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   BinaryData zeroedBytes(size_t size)
+   {
+      return BinaryData(std::vector<uint8_t>(size, 0));
+   }
+
+   /*
+   Bare websocket client: completes the websocket handshake with the server
+   and writes a single frame of our choosing, without going through the AEAD
+   layer the regular client enforces. With keepWriting, it writes that frame
+   again every 10ms for as long as the connection is open.
+   */
+   class RawWsClient
+   {
+   private:
+      struct lws_context* context_ = nullptr;
+      std::thread serviceThr_;
+      std::atomic<bool> run_{true};
+
+      BinaryData frame_;
+      bool written_ = false;
+      std::promise<bool> writtenProm_;
+
+      const bool keepWriting_;
+      struct lws* wsi_ = nullptr;
+      std::atomic<bool> closed_{false};
+
+   private:
+      static int callback(struct lws* wsi, enum lws_callback_reasons reason,
+         void* user, void*, size_t)
+      {
+         auto instance = (RawWsClient*)user;
+         if (instance == nullptr) {
+            return 0;
+         }
+
+         switch (reason)
+         {
+            case LWS_CALLBACK_CLIENT_ESTABLISHED:
+               instance->wsi_ = wsi;
+               lws_callback_on_writable(wsi);
+               break;
+
+            case LWS_CALLBACK_CLIENT_WRITEABLE:
+            {
+               if (instance->written_ && !instance->keepWriting_) {
+                  break;
+               }
+               auto size = instance->frame_.getSize() - LWS_PRE;
+               auto result = lws_write(wsi,
+                  instance->frame_.getPtr() + LWS_PRE, size, LWS_WRITE_BINARY);
+               if (!instance->written_) {
+                  instance->written_ = true;
+                  instance->writtenProm_.set_value(result == (int)size);
+               }
+               break;
+            }
+
+            case LWS_CALLBACK_CLIENT_CLOSED:
+               instance->wsi_ = nullptr;
+               instance->closed_.store(true);
+               break;
+
+            case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
+            {
+               if (!instance->written_) {
+                  instance->written_ = true;
+                  instance->writtenProm_.set_value(false);
+               }
+               break;
+            }
+
+            default:
+               break;
+         }
+         return 0;
+      }
+
+   public:
+      RawWsClient(const BinaryData& frame, bool keepWriting = false) :
+         keepWriting_(keepWriting)
+      {
+         frame_.resize(LWS_PRE);
+         frame_.append(frame);
+      }
+
+      ~RawWsClient()
+      {
+         run_.store(false);
+         if (context_ != nullptr) {
+            lws_cancel_service(context_);
+         }
+         if (serviceThr_.joinable()) {
+            serviceThr_.join();
+         }
+         if (context_ != nullptr) {
+            lws_context_destroy(context_);
+         }
+      }
+
+      static lws_log_cx_t* logContext()
+      {
+         /*
+         lws counts the contexts and connections bound to a logging
+         context, without a lock unless it is built with LWS_MAX_SMP > 1.
+         The server uses the default one from its own thread: give the raw
+         clients theirs, so the two threads never update the same count.
+         The raw clients run one at a time.
+         */
+         static lws_log_cx_t cx = []() {
+            lws_log_cx_t result{};
+            result.u.emit = lwsl_emit_stderr;
+            result.lll_flags = LLL_ERR | LLL_WARN | LLL_NOTICE;
+            return result;
+         }();
+         return &cx;
+      }
+
+      bool write(uint16_t port, std::chrono::milliseconds timeout)
+      {
+         static struct lws_protocols protocols[] = {
+            { "armory-bdm-protocol", RawWsClient::callback,
+               sizeof(void*), 8000, 0, nullptr, 0 },
+            { nullptr, nullptr, 0, 0, 0, nullptr, 0 }
+         };
+
+         struct lws_context_creation_info info;
+         memset(&info, 0, sizeof(info));
+         info.port = CONTEXT_PORT_NO_LISTEN;
+         info.protocols = protocols;
+         info.gid = -1;
+         info.uid = -1;
+         info.log_cx = logContext();
+         context_ = lws_create_context(&info);
+         if (context_ == nullptr) {
+            return false;
+         }
+
+         struct lws_client_connect_info connInfo;
+         memset(&connInfo, 0, sizeof(connInfo));
+         connInfo.context = context_;
+         connInfo.address = "127.0.0.1";
+         connInfo.port = port;
+         connInfo.path = "/";
+         connInfo.host = connInfo.address;
+         connInfo.origin = connInfo.address;
+         connInfo.ietf_version_or_minus_one = -1;
+         connInfo.protocol = protocols[0].name;
+         connInfo.userdata = this;
+         if (lws_client_connect_via_info(&connInfo) == nullptr) {
+            return false;
+         }
+
+         auto fut = writtenProm_.get_future();
+         serviceThr_ = std::thread([this]{
+            while (run_.load()) {
+               if (keepWriting_ && written_ && wsi_ != nullptr) {
+                  std::this_thread::sleep_for(10ms);
+                  lws_callback_on_writable(wsi_);
+               }
+               lws_service(context_, 50);
+            }
+         });
+
+         if (fut.wait_for(timeout) != std::future_status::ready) {
+            return false;
+         }
+         return fut.get();
+      }
+
+      //true if the server closed the connection within the timeout
+      bool waitClosed(std::chrono::milliseconds timeout)
+      {
+         auto deadline = std::chrono::steady_clock::now() + timeout;
+         while (!closed_.load()) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+               return false;
+            }
+            std::this_thread::sleep_for(10ms);
+         }
+         return true;
+      }
+   };
+
+   //collects error notifications so tests can wait on them with a timeout
+   class ErrorCatcher : public DBTestUtils::UTCallback
+   {
+   private:
+      mutable Threading::TimedQueue<std::shared_ptr<BdvError>> errors_;
+
+   public:
+      void pushError(const BdvError& error) const override
+      {
+         errors_.push_back(std::make_shared<BdvError>(error));
+         DBTestUtils::UTCallback::pushError(error);
+      }
+
+      std::shared_ptr<BdvError> nextError(std::chrono::milliseconds timeout)
+      {
+         try {
+            return errors_.pop_front(timeout);
+         } catch (const Threading::StackTimedOutException&) {
+            return nullptr;
+         }
+      }
+   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+class BlockUtilsBareWithServerDeathTest : public BlockUtilsBareWithServer
+{
+   /*
+   Scenarios that take the whole process down when they fail: they run in a
+   death test child, which sets the fixture up and tears it down on its own,
+   and has to exit cleanly to pass.
+   */
+
+protected:
+   void SetUp() override
+   {
+      GTEST_FLAG_SET(death_test_style, "threadsafe");
+   }
+
+   void TearDown() override
+   {}
+
+   void runScenario(const std::function<void(void)>& scenario)
+   {
+      //a hung scenario fails instead of blocking the suite
+      std::thread watchdog([]{
+         std::this_thread::sleep_for(30s);
+         std::_Exit(3);
+      });
+      watchdog.detach();
+
+      BlockUtilsBareWithServer::SetUp();
+      scenario();
+      BlockUtilsBareWithServer::TearDown();
+      std::_Exit(::testing::Test::HasFailure() ? 1 : 0);
+   }
+
+   std::shared_ptr<AsyncClient::BlockDataViewer> connectClient(
+      std::shared_ptr<DBTestUtils::UTCallback> callback)
+   {
+      auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+         "127.0.0.1", Config::NetworkSettings::dbPort(),
+         std::make_shared<NetworkPeers::ClientStore>(
+            Wallets::IO::ReadOnlyFileParams{
+               homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+         true, //public server
+         callback);
+      bdvObj->connectToRemote();
+      return bdvObj;
+   }
+
+   //true if the node status request got a valid reply in time
+   bool nodeStatusReplies(AsyncClient::BlockDataViewer& bdvObj)
+   {
+      auto prom = std::make_shared<std::promise<bool>>();
+      auto fut = prom->get_future();
+      bdvObj.getNodeStatus([prom](ReturnMessage<Node::Status> result){
+         try {
+            result.get();
+            prom->set_value(true);
+         } catch (const std::exception&) {
+            prom->set_value(false);
+         }
+      });
+
+      if (fut.wait_for(5s) != std::future_status::ready) {
+         return false;
+      }
+      return fut.get();
+   }
+
+   struct RawReply
+   {
+      bool success = false;
+      std::string error;
+      uint32_t value = UINT32_MAX;
+   };
+
+   /*
+   Sends a request payload as is and hands back the reply, inspect pulls a
+   value out of it
+   */
+   std::future<RawReply> sendRawRequest(
+      AsyncClient::BlockDataViewer& bdvObj, std::vector<uint8_t> data,
+      std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect = nullptr)
+   {
+      class ReplyCallback : public Network::CallbackReturn_WebSocket
+      {
+      private:
+         std::shared_ptr<std::promise<RawReply>> prom_;
+         std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect_;
+
+      public:
+         ReplyCallback(std::shared_ptr<std::promise<RawReply>> prom,
+            std::function<uint32_t(Codec::BDV::Reply::Reader)> inspect) :
+            prom_(prom), inspect_(inspect)
+         {}
+
+         void callback(const Network::WebSocketMessagePartial& msg) override
+         {
+            RawReply result;
+            try {
+               auto msgReader = msg.getReader();
+               auto capnReader = msgReader->getReader();
+               auto reply = capnReader->getRoot<Codec::BDV::Reply>();
+               result.success = reply.getSuccess();
+               result.error = std::string(reply.getError());
+               if (inspect_) {
+                  result.value = inspect_(reply);
+               }
+            } catch (const std::exception& e) {
+               result.success = false;
+               result.error = std::string{"unreadable reply: "} + e.what();
+            }
+            prom_->set_value(std::move(result));
+         }
+      };
+
+      auto prom = std::make_shared<std::promise<RawReply>>();
+      auto readPayload = std::make_shared<Network::Socket_ReadPayload>();
+      readPayload->callbackReturn_ =
+         std::make_unique<ReplyCallback>(prom, inspect);
+      bdvObj.getSocketObject()->pushPayload(
+         std::make_unique<Network::WritePayload_Raw>(data), readPayload);
+      return prom->get_future();
+   }
+
+   static std::vector<uint8_t> toBytes(capnp::MallocMessageBuilder& message)
+   {
+      auto flat = capnp::messageToFlatArray(message);
+      auto bytes = flat.asBytes();
+      return std::vector<uint8_t>(bytes.begin(), bytes.end());
+   }
+
+   /*
+   Not a capnp message: the segment table claims more segments than
+   there is data for
+   */
+   static std::vector<uint8_t> malformedRequest()
+   {
+      std::vector<uint8_t> data(16, 0);
+      data[0] = 0xFF;
+      data[1] = 0xFF;
+      data[2] = 0xFF;
+      data[3] = 0x7F;
+      return data;
+   }
+};
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, ShortFrameBeforeHandshake)
+{
+   /*
+   A frame too short to carry a packet type, sent before the AEAD
+   handshake, should get its connection dropped without taking the
+   server down
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      for (unsigned size=1; size<5; size++) {
+         RawWsClient rawClient(zeroedBytes(size));
+         ASSERT_TRUE(rawClient.write(Config::NetworkSettings::dbPort(), 5s));
+
+         //give the server time to process the frame before disconnecting
+         std::this_thread::sleep_for(200ms);
+      }
+
+      //the server still serves regular clients
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_SocketClosed)
+{
+   /*
+   A connection the server drops gets its socket closed by the server: a
+   short frame, a handshake packet of a type the server does not take and
+   a request sent ahead of the encryption handshake each end the connection
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      //serialized packets start with LWS_PRE bytes of room for lws
+      auto toWire = [](const BinaryData& packet)->BinaryData
+      {
+         return packet.getSliceCopy(LWS_PRE, packet.getSize() - LWS_PRE);
+      };
+
+      std::vector<BinaryData> frames {
+         zeroedBytes(1),
+         toWire(Network::WebSocketMessageCodec::serializePacketWithoutId(
+            zeroedBytes(33).getRef(), nullptr,
+            ArmoryAEAD::BIP151_PayloadType::PresentPubKey)[0]),
+         toWire(Network::WebSocketMessageCodec::serialize(
+            zeroedBytes(33).getRef(), nullptr,
+            ArmoryAEAD::BIP151_PayloadType::SinglePacket, 1)[0])
+      };
+
+      for (unsigned i=0; i<frames.size(); i++) {
+         RawWsClient rawClient(frames[i]);
+         ASSERT_TRUE(rawClient.write(
+            Config::NetworkSettings::dbPort(), 5s)) << "frame #" << i;
+         EXPECT_TRUE(rawClient.waitClosed(5s)) << "frame #" << i;
+      }
+
+      //the server still serves regular clients
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_KeepsSending)
+{
+   /*
+   A dropped connection that keeps sending frames gets its socket closed
+   all the same, so nothing it sends afterwards is queued. A client
+   connected next to it is served all along.
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      RawWsClient rawClient(zeroedBytes(1), true);
+      ASSERT_TRUE(rawClient.write(Config::NetworkSettings::dbPort(), 5s));
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+      EXPECT_TRUE(rawClient.waitClosed(5s));
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, DroppedConnection_ClientLeaves)
+{
+   /*
+   Raw clients that send a frame that gets them dropped and leave right
+   away: the connection may be gone by the time the server gets to close
+   it, the server skips it and keeps serving
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      for (unsigned i=0; i<300; i++) {
+         RawWsClient rawClient(zeroedBytes(1), i % 2 == 1);
+         ASSERT_TRUE(rawClient.write(
+            Config::NetworkSettings::dbPort(), 5s)) << "iter #" << i;
+         if (i % 3 == 0) {
+            std::this_thread::sleep_for(
+               std::chrono::microseconds(200 * (i % 7)));
+         }
+      }
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, MalformedRequest_RegisteredBdv)
+{
+   /*
+   A request from a registered client that fails to parse gets an error
+   reply, and the client's next request is processed
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+
+      auto fut = sendRawRequest(*bdvObj, malformedRequest());
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      auto reply = fut.get();
+      EXPECT_FALSE(reply.success);
+      EXPECT_FALSE(reply.error.empty());
+
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, MalformedRequest_UnregisteredClient)
+{
+   /*
+   Same as above, from a client that has yet to register its bdv
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+
+      auto pCallback = std::make_shared<DBTestUtils::UTCallback>();
+      auto bdvObj = connectClient(pCallback);
+
+      auto fut = sendRawRequest(*bdvObj, malformedRequest());
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      auto reply = fut.get();
+      EXPECT_FALSE(reply.success);
+      EXPECT_FALSE(reply.error.empty());
+
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      EXPECT_TRUE(nodeStatusReplies(*bdvObj));
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, RpcBroadcast_InvalidTx)
+{
+   /*
+   A tx that fails to deserialize in the rpc broadcast thread is reported
+   to its bdv, the thread moves on to the next broadcast
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+      auto pCallback = std::make_shared<ErrorCatcher>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      bdvObj->goOnline();
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      for (unsigned i=0; i<2; i++) {
+         std::vector<uint8_t> invalidTx{1, 2, 3};
+         capnp::MallocMessageBuilder message;
+         auto request = message.initRoot<Codec::BDV::Request>();
+         auto staticRequest = request.initStatic();
+         staticRequest.setRpcBroadcast(
+            capnp::Data::Reader(invalidTx.data(), invalidTx.size()));
+
+         auto fut = sendRawRequest(*bdvObj, toBytes(message));
+         ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+         EXPECT_TRUE(fut.get().success);
+
+         auto error = pCallback->nextError(5s);
+         ASSERT_NE(error, nullptr) << "broadcast #" << i;
+         EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+      }
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServer, ZcError_BdvGone)
+{
+   /*
+   A zc error for a bdv that is gone should not stop the zc notification
+   thread: errors for other bdvs still go through
+   */
+   WebSocketServer::initPeerStore({
+      homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+   auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+   startWSServer(clients);
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   auto pCallback = std::make_shared<ErrorCatcher>();
+   auto bdvObj = AsyncClient::BlockDataViewer::getNewBDV(
+      "127.0.0.1", Config::NetworkSettings::dbPort(),
+      std::make_shared<NetworkPeers::ClientStore>(Wallets::IO::ReadOnlyFileParams{
+         homedir_ / CLIENT_AUTH_PEER_FILENAME, authPeersPassLbd_}),
+      true, //public server
+      pCallback);
+   bdvObj->connectToRemote();
+   bdvObj->registerWithDB(Config::BitcoinSettings::getMagicBytes().toHexStr());
+   bdvObj->goOnline();
+   pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+   auto bdvIds = clients->getBdvIds();
+   ASSERT_EQ(bdvIds.size(), 1U);
+   auto bdvId = *bdvIds.begin();
+
+   auto goneHash = READHEX("0000000000000000000000000000000000000000000000000000000000000001");
+   auto ourHash = READHEX("0000000000000000000000000000000000000000000000000000000000000002");
+   {
+      ZeroConf::ZeroConfCallbacks_BDV zcCallbacks(clients.get());
+      zcCallbacks.pushZcError(bdvId + 1, goneHash,
+         ArmoryErrorCodes::ZcBroadcast_Error, "bdv is gone");
+      zcCallbacks.pushZcError(bdvId, ourHash,
+         ArmoryErrorCodes::ZcBroadcast_Error, "bdv is here");
+
+      auto error = pCallback->nextError(5s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorData, ourHash);
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   /*
+   Well formed tx spending an outpoint that does not exist: the mocked node
+   ignores it on the p2p layer, so its broadcast times out and falls back
+   to the rpc broadcast, which rejects it
+   */
+   BinaryData unknownOutpointTx()
+   {
+      BinaryWriter bw;
+      bw.put_uint32_t(1); //version
+      bw.put_var_int(1); //txin count
+      bw.put_BinaryData(BinaryData(std::vector<uint8_t>(32, 0xAB)));
+      bw.put_uint32_t(0); //outpoint index
+      bw.put_var_int(0); //empty sigscript
+      bw.put_uint32_t(UINT32_MAX); //sequence
+      bw.put_var_int(1); //txout count
+      bw.put_uint64_t(COIN);
+      bw.put_var_int(25); //p2pkh script size
+      bw.put_uint8_t(0x76); //OP_DUP
+      bw.put_uint8_t(0xA9); //OP_HASH160
+      bw.put_uint8_t(20);
+      bw.put_BinaryData(TestChain::scrAddrA.getSliceCopy(1, 20));
+      bw.put_uint8_t(0x88); //OP_EQUALVERIFY
+      bw.put_uint8_t(0xAC); //OP_CHECKSIG
+      bw.put_uint32_t(0); //locktime
+      return bw.getData();
+   }
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, P2PBroadcastFallback_BdvGone)
+{
+   /*
+   The bdv that pushed a zc can be gone by the time its p2p broadcast times
+   out: the rpc fallback goes on without it, and still reports to the other
+   bdvs that pushed the same zc
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      auto clients = std::make_shared<Clients>(theBDMt_->bdm());
+      startWSServer(clients);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      theBDMt_->bdm()->enableZeroConf();
+
+      const auto magic = Config::BitcoinSettings::getMagicBytes().toHexStr();
+      auto callbackA = std::make_shared<ErrorCatcher>();
+      auto bdvA = connectClient(callbackA);
+      bdvA->registerWithDB(magic);
+      auto callbackB = std::make_shared<ErrorCatcher>();
+      auto bdvB = connectClient(callbackB);
+      bdvB->registerWithDB(magic);
+      ASSERT_EQ(clients->getBdvIds().size(), 2U);
+
+      //a bdv only gets error notifications once it is ready
+      bdvB->goOnline();
+      callbackB->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      //A pushes the zc, B pushes it after A and gets tied to A's broadcast,
+      //a reply to the next request means the broadcast was processed
+      auto rawTx = unknownOutpointTx();
+      bdvA->broadcastZC({rawTx});
+      ASSERT_TRUE(nodeStatusReplies(*bdvA));
+      bdvB->broadcastZC({rawTx});
+      ASSERT_TRUE(nodeStatusReplies(*bdvB));
+
+      //A leaves before the 5s p2p timeout
+      bdvA->unregisterFromDB();
+      for (unsigned i=0; i<50 && clients->getBdvIds().size() != 1; i++) {
+         std::this_thread::sleep_for(100ms);
+      }
+      ASSERT_EQ(clients->getBdvIds().size(), 1U);
+
+      //B gets the rpc fallback's error
+      auto error = callbackB->nextError(10s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorData, Tx(rawTx).getThisHash());
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////
+TEST_F(BlockUtilsBareWithServerDeathTest, P2PBroadcastFallback_UnregisteredClient)
+{
+   /*
+   Same as above, for a zc pushed by a client that never registered a bdv
+   */
+   EXPECT_EXIT(runScenario([this]{
+      WebSocketServer::initPeerStore({
+         homedir_ / SERVER_AUTH_PEER_FILENAME, authPeersPassLbd_});
+      startWSServer(nullptr);
+      theBDMt_->start(Config::DBSettings::initMode());
+      ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+      theBDMt_->bdm()->enableZeroConf();
+
+      auto unregistered = connectClient(
+         std::make_shared<DBTestUtils::UTCallback>());
+      auto pCallback = std::make_shared<ErrorCatcher>();
+      auto bdvObj = connectClient(pCallback);
+      bdvObj->registerWithDB(
+         Config::BitcoinSettings::getMagicBytes().toHexStr());
+      bdvObj->goOnline();
+      pCallback->waitOnNotification(DBTestUtils::UTCallback::BDMAction_Ready);
+
+      unregistered->broadcastZC({unknownOutpointTx()});
+
+      //wait out the 5s p2p timeout, the fallback is queued by then
+      std::this_thread::sleep_for(7s);
+
+      //the rpc broadcast thread still serves the registered bdv
+      std::vector<uint8_t> invalidTx{1, 2, 3};
+      capnp::MallocMessageBuilder message;
+      auto request = message.initRoot<Codec::BDV::Request>();
+      auto staticRequest = request.initStatic();
+      staticRequest.setRpcBroadcast(
+         capnp::Data::Reader(invalidTx.data(), invalidTx.size()));
+      auto fut = sendRawRequest(*bdvObj, toBytes(message));
+      ASSERT_EQ(fut.wait_for(5s), std::future_status::ready);
+      EXPECT_TRUE(fut.get().success);
+
+      auto error = pCallback->nextError(5s);
+      ASSERT_NE(error, nullptr);
+      EXPECT_EQ(error->errorCode, (int)ArmoryErrorCodes::ZcBroadcast_Error);
+   }), ::testing::ExitedWithCode(0), "");
+}
+
+////////////////////////////////////////////////////////////////////////////////
+namespace {
+   //scrAddr filter running against a bdm state of our choosing
+   class ScrAddrFilter_ControlledBDM : public ScrAddrFilter
+   {
+   private:
+      const std::shared_ptr<Blockchain> blockchain_;
+
+   public:
+      std::atomic<BDMState> state{BDMState::Initializing};
+
+      ScrAddrFilter_ControlledBDM(LMDBBlockDatabase* db, uint16_t sdbiId,
+         std::shared_ptr<Blockchain> bc) :
+         ScrAddrFilter(db, sdbiId), blockchain_(bc)
+      {}
+
+      ~ScrAddrFilter_ControlledBDM() override
+      {
+         //the filter thread calls our overrides, stop it while they exist
+         shutdown();
+      }
+
+   protected:
+      bool bdmIsRunning() const override
+      {
+         return true;
+      }
+
+      BDMState waitOnBDMReady(std::chrono::milliseconds) const override
+      {
+         auto current = state.load();
+         if (current == BDMState::Uninitialized ||
+            current == BDMState::Initializing) {
+            std::this_thread::sleep_for(10ms);
+         }
+         return current;
+      }
+
+      Hash32 applyBlockRangeToDB(
+         uint32_t, const std::vector<std::string>&, bool) override
+      {
+         return Hash32{};
+      }
+
+      std::shared_ptr<Blockchain> blockchain() const override
+      {
+         return blockchain_;
+      }
+
+      std::shared_ptr<ScrAddrFilter> getNew(unsigned) override
+      {
+         return nullptr;
+      }
+   };
+
+   //counts the calls to a registration batch callback
+   class BatchCallbackTracker
+   {
+   private:
+      std::promise<bool> firstCall_;
+
+   public:
+      std::atomic<unsigned> calls{0};
+      std::future<bool> firstCall = firstCall_.get_future();
+
+      RegistrationBatch::Callback get()
+      {
+         return [this](bool success) {
+            if (calls.fetch_add(1) == 0) {
+               firstCall_.set_value(success);
+            }
+         };
+      }
+
+      //empty address set: the batch completes as soon as the bdm is ready
+      std::shared_ptr<RegistrationBatch> makeBatch(const std::string& id)
+      {
+         return std::make_shared<RegistrationBatch>(
+            std::vector<std::string>{id}, std::vector<Types::ScrAddr>{},
+            true, get());
+      }
+   };
+}
+
+////
+TEST_F(BlockUtilsBare, ScrAddrFilter_BatchHaltedWhileWaitingOnBDM)
+{
+   /*
+   A client disconnecting while its registration batch waits on the bdm
+   halts the batch: the filter should drop it and keep processing the
+   batches that come after it, and the halted batch callback should fire
+   only once
+   */
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   BatchCallbackTracker haltedTracker, nextTracker;
+   auto haltedBatch = haltedTracker.makeBatch("halted");
+   auto nextBatch = nextTracker.makeBatch("next");
+   {
+      ScrAddrFilter_ControlledBDM saf(
+         iface_, 0x42, theBDMt_->bdm()->blockchain());
+      saf.start();
+
+      //let the filter pick up the batch and wait on the bdm, then halt it
+      saf.pushAddressBatch(haltedBatch);
+      std::this_thread::sleep_for(200ms);
+      haltedBatch->halt();
+
+      saf.pushAddressBatch(nextBatch);
+      saf.state.store(BDMState::Ready);
+
+      ASSERT_EQ(nextTracker.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_TRUE(nextTracker.firstCall.get());
+   }
+
+   //the filter thread is gone, all calls are in
+   EXPECT_EQ(haltedTracker.calls.load(), 1U);
+   EXPECT_EQ(nextTracker.calls.load(), 1U);
+}
+
+////
+TEST_F(BlockUtilsBare, ScrAddrFilter_BDMInitFailed)
+{
+   /*
+   Batches waiting on a bdm that failed to initialize fail, once each,
+   and the filter moves on to the next batch
+   */
+   theBDMt_->start(Config::DBSettings::initMode());
+   ASSERT_EQ(theBDMt_->bdm()->waitUntilReady(5s), BDMState::Ready);
+
+   BatchCallbackTracker tracker1, tracker2;
+   auto batch1 = tracker1.makeBatch("batch1");
+   auto batch2 = tracker2.makeBatch("batch2");
+   {
+      ScrAddrFilter_ControlledBDM saf(
+         iface_, 0x42, theBDMt_->bdm()->blockchain());
+
+      //halt the batches before the filter goes away, a filter thread
+      //looping on a batch only exits once it is halted
+      auto haltBatches = [&batch1, &batch2](void*) {
+         batch1->halt();
+         batch2->halt();
+      };
+      std::unique_ptr<void, decltype(haltBatches)> haltOnExit(
+         &saf, haltBatches);
+
+      saf.state.store(BDMState::InitializationFailed);
+      saf.start();
+      saf.pushAddressBatch(batch1);
+      saf.pushAddressBatch(batch2);
+
+      ASSERT_EQ(tracker1.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_FALSE(tracker1.firstCall.get());
+      ASSERT_EQ(tracker2.firstCall.wait_for(5s), std::future_status::ready);
+      EXPECT_FALSE(tracker2.firstCall.get());
+
+      //give a looping filter thread time to show
+      std::this_thread::sleep_for(200ms);
+      EXPECT_EQ(tracker1.calls.load(), 1U);
+      EXPECT_EQ(tracker2.calls.load(), 1U);
+   }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+class WebSocketMessageTests : public ::testing::Test
+{
+protected:
+   void SetUp() override
+   {
+      startupBIP151CTX();
+      startupBIP150CTX(4);
+   }
+
+   //serialized packets start with LWS_PRE bytes of room for lws, which
+   //are not sent over the wire
+   static BinaryData toWire(const BinaryData& packet)
+   {
+      return packet.getSliceCopy(LWS_PRE, packet.getSize() - LWS_PRE);
+   }
+
+   /*
+   packet header for fragments and segments:
+     uint32_t size, uint32_t msg id, uint32_t packet id or count,
+     uint8_t type, 3 bytes of padding
+   */
+   static BinaryData makePacket(uint32_t msgId, uint32_t idOrCount,
+      ArmoryAEAD::BIP151_PayloadType type, const BinaryDataRef& body)
+   {
+      BinaryWriter bw;
+      bw.put_uint32_t(body.getSize() + 12);
+      bw.put_uint32_t(msgId);
+      bw.put_uint32_t(idOrCount);
+      bw.put_uint8_t((uint8_t)type);
+      bw.put_uint8_t(0);
+      bw.put_uint16_t(0);
+      bw.put_BinaryDataRef(body);
+      return bw.getData();
+   }
+};
+
+////
+TEST_F(WebSocketMessageTests, ReadPacketType_ShortPacket)
+{
+   //a packet needs 4 bytes of size and 1 byte of type to carry a type
+   for (unsigned size=0; size<5; size++) {
+      BinaryData packet(std::vector<uint8_t>(size, 0x65));
+      EXPECT_EQ(Network::WebSocketMessagePartial::readPacketType(packet.getRef()),
+         ArmoryAEAD::BIP151_PayloadType::Undefined) << "size: " << size;
+   }
+
+   //an aead packet without an id
+   auto packet = zeroedBytes(5);
+   packet.getPtr()[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::Start;
+   EXPECT_EQ(Network::WebSocketMessagePartial::readPacketType(packet.getRef()),
+      ArmoryAEAD::BIP151_PayloadType::Start);
+}
+
+////
+TEST_F(WebSocketMessageTests, ParsePacket_ShortPacket)
+{
+   for (unsigned size=0; size<5; size++) {
+      //zeroed packets: a 4 bytes packet carries a valid size field
+      auto packet = zeroedBytes(size);
+
+      Network::WebSocketMessagePartial msg;
+      EXPECT_FALSE(msg.parsePacket(packet)) << "size: " << size;
+      EXPECT_FALSE(msg.isReady());
+   }
+
+   //an aead packet without an id still parses
+   auto packet = zeroedBytes(5);
+   uint32_t packetSize = 1;
+   memcpy(packet.getPtr(), &packetSize, 4);
+   packet.getPtr()[4] = (uint8_t)ArmoryAEAD::BIP151_PayloadType::Start;
+
+   Network::WebSocketMessagePartial msg;
+   EXPECT_TRUE(msg.parsePacket(packet));
+   EXPECT_TRUE(msg.isReady());
+   EXPECT_EQ(msg.getType(), ArmoryAEAD::BIP151_PayloadType::Start);
+}
+
+////
+TEST_F(WebSocketMessageTests, ParsePacket_TypeMismatch)
+{
+   //an aead packet then a single packet on the same message
+   auto aeadPacket = toWire(Network::WebSocketMessageCodec::serialize(
+      zeroedBytes(32).getRef(), nullptr,
+      ArmoryAEAD::BIP151_PayloadType::EncInit, 0)[0]);
+   auto singlePacket = toWire(Network::WebSocketMessageCodec::serialize(
+      zeroedBytes(32).getRef(), nullptr,
+      ArmoryAEAD::BIP151_PayloadType::SinglePacket, 1)[0]);
+
+   Network::WebSocketMessagePartial msg;
+   ASSERT_TRUE(msg.parsePacket(aeadPacket));
+   EXPECT_FALSE(msg.parsePacket(singlePacket));
+}
+
+////
+TEST_F(WebSocketMessageTests, SegmentedMessage)
+{
+   //a capnp message spread over several segments
+   std::string errStr(1000, 'a');
+   capnp::MallocMessageBuilder message(16, capnp::AllocationStrategy::FIXED_SIZE);
+   auto reply = message.initRoot<Codec::BDV::Reply>();
+   reply.setError(errStr);
+   auto segments = message.getSegmentsForOutput();
+   ASSERT_GT(segments.size(), 1U);
+
+   std::vector<BinaryData> packets;
+   for (uint32_t i=0; i<segments.size(); i++) {
+      BinaryDataRef body(
+         (const uint8_t*)segments[i].begin(),
+         segments[i].size() * sizeof(capnp::word));
+      if (i == 0) {
+         packets.emplace_back(makePacket(10, segments.size(),
+            ArmoryAEAD::BIP151_PayloadType::FirstSegment, body));
+      } else {
+         packets.emplace_back(makePacket(10, i,
+            ArmoryAEAD::BIP151_PayloadType::Segment, body));
+      }
+   }
+
+   //segments can come in any order
+   Network::WebSocketMessagePartial msg;
+   for (auto iter = packets.rbegin(); iter != packets.rend(); ++iter) {
+      EXPECT_FALSE(msg.isReady());
+      ASSERT_TRUE(msg.parsePacket(*iter));
+   }
+   ASSERT_TRUE(msg.isReady());
+
+   auto msgReader = msg.getReader();
+   ASSERT_NE(msgReader, nullptr);
+   auto capnReader = msgReader->getReader();
+   auto readReply = capnReader->getRoot<Codec::BDV::Reply>();
+   EXPECT_EQ(std::string(readReply.getError()), errStr);
+}
+
+////
+TEST_F(WebSocketMessageTests, SegmentedMessage_IdOutOfRange)
+{
+   /*
+   A message announcing 2 segments, carrying segment ids 0 and 5: the
+   segment count matches the announced count, but the segmented reader
+   would write segment 5 past the end of its 2 entries
+   */
+   auto body = zeroedBytes(8);
+   Network::WebSocketMessagePartial msg;
+   auto packet1 = makePacket(10, 2,
+      ArmoryAEAD::BIP151_PayloadType::FirstSegment, body.getRef());
+   auto packet2 = makePacket(10, 5,
+      ArmoryAEAD::BIP151_PayloadType::Segment, body.getRef());
+   ASSERT_TRUE(msg.parsePacket(packet1));
+   ASSERT_TRUE(msg.parsePacket(packet2));
+
+   ASSERT_FALSE(msg.isReady());
+   EXPECT_EQ(msg.getReader(), nullptr);
+}
+
+////
+TEST_F(WebSocketMessageTests, FragmentedMessage_IdOutOfRange)
+{
+   //same with fragments: 2 announced, ids 0 and 3
+   auto body = zeroedBytes(8);
+   Network::WebSocketMessagePartial msg;
+   auto packet1 = makePacket(10, 2,
+      ArmoryAEAD::BIP151_PayloadType::FragmentHeader, body.getRef());
+   auto packet2 = makePacket(10, 3,
+      ArmoryAEAD::BIP151_PayloadType::FragmentPacket, body.getRef());
+   ASSERT_TRUE(msg.parsePacket(packet1));
+   ASSERT_TRUE(msg.parsePacket(packet2));
+
+   ASSERT_FALSE(msg.isReady());
+   EXPECT_EQ(msg.getReader(), nullptr);
+}
+
+////
+TEST_F(WebSocketMessageTests, ClientConnection_ShortPacket)
+{
+   /*
+   Before the AEAD handshake, packets reach processReadQueue straight off
+   the socket. One too short to carry a type closes the connection.
+   */
+   auto peers = std::make_shared<NetworkPeers::ServerStore>();
+   for (unsigned size=1; size<5; size++) {
+      ClientConnection conn(nullptr, size, peers->getView(), true);
+      conn.readQueue_->push_back(zeroedBytes(size));
+
+      EXPECT_NO_THROW(conn.processReadQueue(nullptr, nullptr)) <<
+         "size: " << size;
+      EXPECT_EQ(conn.run_->load(), -1) << "size: " << size;
+   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
