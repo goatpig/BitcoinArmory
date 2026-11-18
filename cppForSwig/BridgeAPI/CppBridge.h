@@ -121,6 +121,7 @@ namespace Armory
          std::shared_ptr<Threading::BlockingQueue<
             std::unique_ptr<Notifications::Server::Notif>>> dbNotifQueue_;
          std::thread dbNotifThread_;
+         std::thread dbCleanupThread_;
 
          //these objects are the core of the bridge
          std::shared_ptr<WalletManager> wltManager_;

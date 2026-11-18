@@ -552,6 +552,10 @@ CppBridge::~CppBridge()
    if (dbNotifThread_.joinable()) {
       dbNotifThread_.join();
    }
+   //the notif thread is done, so no new cleanup thread can start
+   if (dbCleanupThread_.joinable()) {
+      dbCleanupThread_.join();
+   }
    cleanupDbConnection();
    wltManager_.reset();
 }
@@ -676,11 +680,11 @@ void CppBridge::runServerNotificationProcessingThread()
                   throw std::runtime_error("empty packet in push notif!");
                }
 
-               //cleanup bdv in another thread
-               std::thread cleanupThr([this](){ cleanupDbConnection(); });
-               if (cleanupThr.joinable()) {
-                  cleanupThr.detach();
+               //cleanup bdv in another thread, the destructor waits on it
+               if (dbCleanupThread_.joinable()) {
+                  dbCleanupThread_.join();
                }
+               dbCleanupThread_ = std::thread([this](){ cleanupDbConnection(); });
                break;
             }
 
