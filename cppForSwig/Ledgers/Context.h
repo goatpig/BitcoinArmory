@@ -77,6 +77,8 @@ namespace Armory
          const Tx& getTxByHash(const Types::TxHash&) const;
          std::vector<Types::TxKey> getKeysForHash(const Types::TxHash&) const;
          std::set<Types::TxKey> purgeTxs(const std::set<Types::TxHash>&);
+         void purgeZC(void);
+         void purgeDbCopies(void);
       };
 
       class Context

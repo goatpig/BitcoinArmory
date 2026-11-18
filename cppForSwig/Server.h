@@ -181,7 +181,7 @@ public:
 
    static void init(void);
    static void initPeerStore(const Armory::Wallets::IO::ReadOnlyFileParams&);
-   static void start(std::shared_ptr<BlockDataManager>);
+   static void start(std::shared_ptr<Clients>);
    static void shutdown(void);
    static bool isMasterKey(BinaryDataRef);
 

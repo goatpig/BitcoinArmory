@@ -187,7 +187,9 @@ void WalletManager::updateMainLedgerFilter(
    mainLedgerFilter_ = idMap;
    notifQueue_->push_back(
       std::make_unique<Notifications::Push::Command_Refresh>(
-         std::string{"wallet_filter_changed"}));
+         std::string{}, //socket name is ignored in NoSync refresh
+         std::string{"wallet_filter_changed"},
+         Notifications::SyncState::NoSync));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -271,6 +273,9 @@ void WalletManager::cleanupBdvPtr()
 
    //clean up local reference to bdv shared_ptr
    bdvPtr_.reset();
+
+   //finally, clear the cache
+   txioCache_->purge(TxIOCache::PurgeStatus::PurgeAll);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -297,7 +302,9 @@ void WalletManager::registerWallet(const Wallets::WalletId& wltId,
       container->registerWithBDV(isNew);
    } catch (const OfflineException& e) {
       auto message = Serialization::getRefreshPacket(
-         std::make_unique<Push::Command_Refresh>(container->getDbId()));
+         std::make_unique<Push::Command_Refresh>(
+            std::string{}, //socket name is ignored in NoSync refresh
+            container->getDbId(), SyncState::NoSync));
       notifQueue_->push_back(std::make_unique<Push::Command_PassAlong>(
          std::move(message)));
       throw e;
@@ -702,29 +709,51 @@ void WalletManager::loadWallets()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void WalletManager::updateStateFromDB(
+bool WalletManager::updateStateFromDB(
    std::unique_ptr<Notifications::Push::Payload> payload)
 {
    using namespace Notifications;
 
    //update txio cache
    std::shared_ptr<Push::Payload> sharedPayload{std::move(payload)};
-   auto checkFromHeight = txioCache_->update(bdvPtr_, sharedPayload);
 
-   //resolve wallets
-   {
+   if (sharedPayload->syncWalletState() != SyncState::NoSync) {
+      //a reorg can take zcs out of the db's mempool, and the bridge doesn't
+      //learn which: the cache drops its zcs, the update below gets them anew
+      if (sharedPayload->type == Push::PayloadType::NEWBLOCK) {
+         auto blockPtr =
+            std::dynamic_pointer_cast<Push::Notif_NewBlock>(sharedPayload);
+         if (blockPtr->blockNotif.isReorg()) {
+            txioCache_->purge(TxIOCache::PurgeStatus::PurgeZC);
+         }
+      }
+
+      auto updateResult = txioCache_->update(bdvPtr_, sharedPayload);
+      if (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
+         unsigned retries = 0;
+         while (updateResult.first != TxIOCache::PurgeStatus::NoPurge) {
+            if (retries++ >= 2) {
+               //we cannot get data from this bdv, drop it
+               return false;
+            }
+            txioCache_->purge(updateResult.first);
+            updateResult = txioCache_->update(bdvPtr_, sharedPayload);
+         }
+      }
+
+      //the txio cache is updated, resolve txios for wallets
       ReentrantLock lock(this);
       for (auto wltCont : walletsByDbId_) {
-         wltCont.second->resolveTxios(checkFromHeight);
+         wltCont.second->resolveTxios(updateResult.second);
          wltCont.second->resolveZcTxios();
 
-         if (sharedPayload->syncWalletState()) {
+         if (sharedPayload->syncWalletState() == SyncState::SyncWallets) {
             wltCont.second->synchronizeAddressChainState();
          }
       }
    }
 
-      //fire callback
+   //fire callback
    switch (sharedPayload->type)
    {
       case Push::PayloadType::NEWBLOCK:
@@ -770,8 +799,9 @@ void WalletManager::updateStateFromDB(
       }
 
       default:
-         return;
+         break;
    }
+   return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

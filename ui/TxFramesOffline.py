@@ -22,7 +22,7 @@ from armoryengine.Transaction import UnsignedTransaction, \
 from armoryengine.ArmoryUtils import LOGEXCEPT, LOGERROR, LOGINFO, \
    LOGWARN, CPP_TXOUT_STDSINGLESIG, CPP_TXOUT_P2SH, coin2str, enum, \
    binary_to_hex, coin2strNZS, NetworkIDError, UnserializeError, OS_WINDOWS, \
-   SignatureError, UstxError, InvalidHashError
+   SignatureError, UstxError, InvalidHashError, BlockchainUnavailableError
 from armoryengine.Settings import TheSettings
 from armoryengine.AddressUtils import script_to_scrAddr, BadAddressError
 from armoryengine.CppBridge import BridgeSignerError, BridgeError
@@ -65,7 +65,8 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
       w,h = relaxedSizeNChar(self.txtUSTX, 68)
       self.txtUSTX.setMinimumWidth(w)
       self.txtUSTX.setMinimumHeight(8*h)
-      self.txtUSTX.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+      self.txtUSTX.setSizePolicy(
+         QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
 
       self.btnSign = QtWidgets.QPushButton(self.tr('Sign'))
       self.btnBroadcast = QtWidgets.QPushButton(self.tr('Broadcast'))
@@ -78,10 +79,7 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
 
       self.btnSign.setEnabled(False)
       self.btnBroadcast.setEnabled(False)
-
       self.txtUSTX.textChanged.connect(self.processUSTX)
-
-
       self.btnSign.clicked.connect(self.signTx)
       self.btnBroadcast.clicked.connect(self.broadTx)
       self.btnSave.clicked.connect(self.saveTx)
@@ -451,7 +449,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
                serTx = self.ustxObj.toTxSigCollect(
                   self.signerTypeSelect.fromType())
                self.txtUSTX.setText(serTx)
-
                if not self.fileLoaded == None:
                   self.saveTxAuto()
             else:
@@ -476,8 +473,6 @@ class SignBroadcastOfflineTxFrame(ArmoryFrame):
             'If this does not seem correct, verify that  is open '
             'and synchronized with the network.'), QtWidgets.QMessageBox.Ok)
          return
-
-
 
       try:
          finalTx = self.ustxObj.getSignedPyTx()

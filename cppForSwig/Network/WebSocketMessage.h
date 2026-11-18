@@ -111,7 +111,9 @@ namespace Armory
       public:
          CapnpFlatReader(std::map<uint32_t, BinaryData>);
          ~CapnpFlatReader(void) {}
+
          std::unique_ptr<capnp::MessageReader> getReader(void) const override;
+         const BinaryData& getRawData(void) const;
       };
 
       ////

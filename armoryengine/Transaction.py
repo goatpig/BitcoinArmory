@@ -2388,30 +2388,33 @@ def getTxsByHash(txHashes):
 
 #############################################################################
 def getFeeForTx(txHash):
-   if TheBDM.getState()==BDM_BLOCKCHAIN_READY:
-      try:
-         tx = PyTx().unserialize(TheBridge.service.getTxByHash(txHash).raw)
-         if not tx.isInitialized():
-            LOGERROR('Attempted to get fee for tx we don\'t have...?  %s', \
-                                                binary_to_hex(txHash,BIGENDIAN))
-            return 0, 0
-         valIn, valOut = 0,0
-         for i in range(len(tx.inputs)):
-            outpoint = tx.inputs[i].getOutPoint()
-            parentTx = PyTx().unserialize(TheBridge.getTxByHash(outpoint.txHash).raw)
-            if not parentTx.isInitialized():
-               LOGERROR('[getFeeForTx] Couldnt resolve parent')
-               return 0, 0
-            valIn += parentTx.outputs[outpoint.txOutIndex].getValue()
-         for i in range(len(tx.outputs)):
-            valOut += tx.outputs[i].getValue()
-         fee = valIn - valOut
-         txWeight = tx.getTxWeight()
-         fee_byte = fee / float(txWeight)
-         return fee, fee_byte
-      except:
-         LOGERROR('Couldn\'t get tx fee. Ignore this message in Fullnode') 
+   if TheBDM.getState() != BDM_BLOCKCHAIN_READY:
+      return 0, 0
+
+   bridgeTxs = getTxsByHash([txHash])
+   if txHash not in bridgeTxs:
+      LOGERROR('Attempted to get fee for tx we don\'t have...?  '
+         f'{binary_to_hex(txHash, BIGENDIAN)}')
+      return 0, 0
+   tx = bridgeTxs[txHash].pytx
+
+   #the parents of all inputs in one request
+   parentTxs = getTxsByHash(
+      [txin.getOutPoint().txHash for txin in tx.inputs])
+   valIn, valOut = 0,0
+   for i in range(len(tx.inputs)):
+      outpoint = tx.inputs[i].getOutPoint()
+      if outpoint.txHash not in parentTxs:
+         LOGERROR('[getFeeForTx] Couldnt resolve parent')
          return 0, 0
+      parentTx = parentTxs[outpoint.txHash].pytx
+      valIn += parentTx.outputs[outpoint.txOutIndex].getValue()
+   for i in range(len(tx.outputs)):
+      valOut += tx.outputs[i].getValue()
+   fee = valIn - valOut
+   txWeight = tx.getTxWeight()
+   fee_byte = fee / float(txWeight)
+   return fee, fee_byte
 
 #############################################################################
 def determineSentToSelfAmt(le, wlt):

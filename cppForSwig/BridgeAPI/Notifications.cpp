@@ -8,6 +8,7 @@
 
 #include "Notifications.h"
 #include <Ledgers/LedgerEntry.h>
+#include "BDV_Notification.h"
 
 #include <capnp/message.h>
 #include <capnp/serialize.h>
@@ -74,23 +75,23 @@ namespace
    }
 
    void nodeStatusToCapnp(
-      std::shared_ptr<DBClientClasses::NodeStatus> nodeStatus,
+      const Node::Status& nodeStatus,
       Codec::Types::NodeStatus::Builder& capnNodeStatus)
    {
       capnNodeStatus.setNode(
-         (Codec::Types::NodeStatus::NodeState)nodeStatus->state());
+         (Codec::Types::NodeStatus::NodeState)nodeStatus.state);
       capnNodeStatus.setRpc(
-         (Codec::Types::NodeStatus::RpcState)nodeStatus->rpcState());
-      capnNodeStatus.setIsSW(nodeStatus->isSegWitEnabled());
+         (Codec::Types::NodeStatus::RpcState)nodeStatus.rpcState);
+      capnNodeStatus.setIsSW(nodeStatus.segWitEnabled);
 
-      auto capnChainState = capnNodeStatus.initChain();
-      const auto& chainState = nodeStatus->chainStatus();
-      capnChainState.setChainState((
-         Codec::Types::ChainStatus::ChainState)chainState.state());
-      capnChainState.setBlockSpeed(chainState.getBlockSpeed());
-      capnChainState.setProgress(chainState.getProgressPct());
-      capnChainState.setEta(chainState.getETA());
-      capnChainState.setBlocksLeft(chainState.getBlocksLeft());
+      auto capnChainStatus = capnNodeStatus.initChain();
+      const auto& chainStatus = nodeStatus.chainStatus;
+      capnChainStatus.setChainState((
+         Codec::Types::ChainStatus::ChainState)chainStatus.state);
+      capnChainStatus.setBlockSpeed(chainStatus.blockSpeed);
+      capnChainStatus.setProgress(chainStatus.progressPct);
+      capnChainStatus.setEta(chainStatus.etaSeconds);
+      capnChainStatus.setBlocksLeft(chainStatus.blocksLeft);
    }
 }
 
@@ -98,98 +99,69 @@ namespace
 // namespace Push
 // NotifHandler
 Push::NotifHandler::NotifHandler(std::shared_ptr<NotifQueue> queue) :
-   RemoteCallback(), queue_(queue)
+   ServerPushHandler{}, queue_(queue)
 {}
 
 ////////
-void Push::NotifHandler::run(BdmNotification notif)
+void Push::NotifHandler::pushNewBlock(
+   const SocketName& name, const NewBlockNotif& newBlock) const
 {
-   switch (notif.action)
-   {
-      case BDMAction_NewBlock:
-      {
-         queue_->push_back(std::make_unique<Notif_NewBlock>(
-            notif.newBlock, false));
-         break;
-      }
+   queue_->push_back(std::make_unique<Notif_NewBlock>(name, newBlock, false));
+}
 
-      case BDMAction_Ready:
-      {
-         queue_->push_back(std::make_unique<Notif_NewBlock>(
-            notif.newBlock, true));
-         break;
-      }
+void Push::NotifHandler::pushReady(
+   const SocketName& name, const NewBlockNotif& ready) const
+{
+   queue_->push_back(std::make_unique<Notif_NewBlock>(name, ready, true));
+}
 
-      case BDMAction_Registered:
-      {
-         //this notifies of bdv registering, not wallets
-         //wallet registration notifs come as refresh, with the ids attached
-         queue_->push_back(std::make_unique<Notif_Registered>());
-         break;
-      }
+void Push::NotifHandler::pushRegistered(const SocketName& name) const
+{
+   //this notifies of bdv registering, not wallets
+   //wallet registration notifs come as refresh, with the ids attached
+   queue_->push_back(std::make_unique<Notif_Registered>(name));
+}
 
-      case BDMAction_ZC:
-      {
-         queue_->push_back(std::make_unique<Notif_ZC>(
-            std::move(notif.txios), std::move(notif.invalidatedZcHashes)));
-         break;
-      }
+void Push::NotifHandler::pushZeroConf(
+   const SocketName& name,
+   const std::string& requestId,
+   std::vector<TxIOPair> txios,
+   std::set<Armory::Types::TxHash> invalidatedHashes) const
+{
+   queue_->push_back(std::make_unique<Notif_ZC>(name,
+      requestId, std::move(txios), std::move(invalidatedHashes)));
+}
 
-      case BDMAction_InvalidatedZC:
-      {
-         //Ignore these for now, they come along new blocks to signal
-         //mined zcs. We handle zc mining differently in bridge.
-         break;
-      }
+void Push::NotifHandler::pushRefresh(
+   const SocketName& name, const std::set<std::string>& ids) const
+{
+   queue_->push_back(std::make_unique<Command_Refresh>(name,
+      ids, SyncState::ScanWallets));
+}
 
-      case BDMAction_Refresh:
-      {
-         queue_->push_back(std::make_unique<Command_Refresh>(notif.ids));
-         break;
-      }
+void Push::NotifHandler::pushNodeStatus(const Node::Status& nodeStatus) const
+{
+   LOGINFO << "got node status update:\n" << nodeStatus.toString();
+   queue_->push_back(std::make_unique<Command_PassAlong>(
+      Serialization::getNodeStatusPacket(nodeStatus)));
+}
 
-      case BDMAction_NodeStatus:
-      {
-         capnp::MallocMessageBuilder message;
-         auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-         auto capnNotif = fromBridge.initNotification();
-         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
-
-         auto capnNode = capnNotif.initNodeStatus();
-         nodeStatusToCapnp(notif.nodeStatus, capnNode);
-
-         queue_->push_back(std::make_unique<Command_PassAlong>(serializeCapnp(message)));
-         break;
-      }
-
-      case BDMAction_BDV_Error:
-      {
-         //notify error
-         LOGINFO << "bdv error:";
-         LOGINFO << "  code: " << notif.error.errCode_;
-         LOGINFO << "  data: " << notif.error.errData_.toHexStr();
-
-         capnp::MallocMessageBuilder message;
-         auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
-         auto capnNotif = fromBridge.initNotification();
-         capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
-         capnNotif.setError(notif.error.errorStr_);
-
-         queue_->push_back(std::make_unique<Command_PassAlong>(serializeCapnp(message)));
-         break;
-      }
-
-      default:
-         return;
-   }
+void Push::NotifHandler::pushError(const BdvError& error) const
+{
+   //notify error
+   LOGERR << "bdv error:";
+   LOGERR << "  code: " << error.errorCode;
+   LOGERR << "  data: " << error.errorData.toHexStr();
+   queue_->push_back(std::make_unique<Command_PassAlong>(
+      Serialization::getErrorPacket(error)));
 }
 
 ////////
-void Push::NotifHandler::progress(
+void Push::NotifHandler::pushProgress(
    BDMPhase phase,
    const std::vector<std::string> &walletIdVec,
    float progress, unsigned secondsRem,
-   unsigned progressNumeric)
+   unsigned progressNumeric) const
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
@@ -212,92 +184,107 @@ void Push::NotifHandler::progress(
 }
 
 ////////
-void Push::NotifHandler::disconnected(const std::string& socketName)
+void Push::NotifHandler::pushDisconnected(const std::string& socketName) const
 {
    queue_->push_back(std::make_unique<Notif_Disconnected>(socketName));
 }
 
 ////////
 // notifs
-Push::Payload::Payload(PayloadType t) :
-   type(t)
+Push::Payload::Payload(PayloadType t, const std::string& name) :
+   type(t), socketName{name}
 {}
 
 Push::Payload::~Payload()
 {}
 
-bool Push::Payload::syncWalletState() const
+SyncState Push::Payload::syncWalletState() const
 {
-   return false;
+   return SyncState::NoSync;
 }
 
 ////////
 Push::Notif_Disconnected::Notif_Disconnected(const std::string& name) :
-   Payload(PayloadType::DISCONNECTED), socketName{name}
+   Payload(PayloadType::DISCONNECTED, name)
 {}
 
 ////////
 Push::Notif_ZC::Notif_ZC(
-   std::vector<TxIOPair> txioVec, std::set<BinaryData> invalidatedZc) :
-   Payload(PayloadType::ZC), txios(std::move(txioVec)),
-   invalidatedZCHashes(std::move(invalidatedZc))
+   const std::string& socketname, std::string id,
+   std::vector<TxIOPair> txioVec,
+   std::set<BinaryData> invalidatedZc) :
+   Payload(PayloadType::ZC, socketname),
+   requestId{std::move(id)}, txios{std::move(txioVec)},
+   invalidatedZCHashes{std::move(invalidatedZc)}
 {}
 
-////////
-Push::Notif_NewBlock::Notif_NewBlock(
-   const NewBlockNotif& notif, bool isReady) :
-   Payload(PayloadType::NEWBLOCK),
-   blockNotif(notif), isReadyNotif(isReady)
-{}
-
-bool Push::Notif_NewBlock::syncWalletState() const
+SyncState Push::Notif_ZC::syncWalletState() const
 {
-   return isReadyNotif;
+   return SyncState::ScanWallets;
 }
 
 ////////
-Push::Notif_Registered::Notif_Registered() :
-   Payload(PayloadType::IS_REGISTERED)
+Push::Notif_NewBlock::Notif_NewBlock(
+   const std::string& socketname,
+   const NewBlockNotif& notif, bool isReady) :
+   Payload(PayloadType::NEWBLOCK, socketname),
+   blockNotif(notif), isReadyNotif(isReady)
+{}
+
+SyncState Push::Notif_NewBlock::syncWalletState() const
+{
+   return isReadyNotif ? SyncState::SyncWallets : SyncState::ScanWallets;
+}
+
+////////
+Push::Notif_Registered::Notif_Registered(const std::string& socketname) :
+   Payload(PayloadType::IS_REGISTERED, socketname)
 {}
 
 ////////
 // commands
 Push::Command_PassAlong::Command_PassAlong(BinaryData pushData) :
-   Payload(PayloadType::PASS_TO_CLIENT), packet(std::move(pushData))
+   Payload(PayloadType::PASS_TO_CLIENT, {}), packet(std::move(pushData))
 {}
 
 ////////
-Push::Command_Refresh::Command_Refresh(const std::set<std::string>& ids) :
-   Payload(PayloadType::REFRESH), refreshIds(ids)
+Push::Command_Refresh::Command_Refresh(
+   const std::string& socketname,
+   const std::set<std::string>& ids, SyncState state) :
+   Payload(PayloadType::REFRESH, socketname),
+   refreshIds(ids), syncWalletsWithDB{state}
 {}
 
-Push::Command_Refresh::Command_Refresh(const std::string& id) :
-   Payload(PayloadType::REFRESH), refreshIds({id})
+Push::Command_Refresh::Command_Refresh(
+   const std::string& socketname,
+   const std::string& id, SyncState state) :
+   Payload(PayloadType::REFRESH, socketname),
+   refreshIds({id}), syncWalletsWithDB{state}
 {}
 
-bool Push::Command_Refresh::syncWalletState() const
+SyncState Push::Command_Refresh::syncWalletState() const
 {
-   return true;
+   return syncWalletsWithDB;
 }
 
 ////////
 Push::Command_ConnectToIp::Command_ConnectToIp(
    const std::string& IP, uint16_t PORT,
    const std::string& cbid, uint64_t msgid) :
-   Payload{PayloadType::CONNECT_TO_IP},
+   Payload{PayloadType::CONNECT_TO_IP, {}},
    ip{IP}, port{PORT}, callbackId{cbid}, msgId{msgid}
 {}
 
 Push::Command_ConnectToPeer::Command_ConnectToPeer(
    const std::string& key, uint64_t msgid) :
-   Payload{PayloadType::CONNECT_TO_PEER},
+   Payload{PayloadType::CONNECT_TO_PEER, {}},
    peerKey{key}, msgId{msgid}
 {}
 
 ////////
 Push::Command_RunAutomationContext::Command_RunAutomationContext(
    const std::string& cbid, uint64_t msgid) :
-   Payload{PayloadType::RUN_AUTOMATION_CONTEXT},
+   Payload{PayloadType::RUN_AUTOMATION_CONTEXT, {}},
    callbackId{cbid}, msgId{msgid}
 {}
 
@@ -398,5 +385,26 @@ BinaryData Serialization::getServerDisconnectedPacket()
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setDisconnected();
    capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+   return serializeCapnp(message);
+}
+
+BinaryData Serialization::getNodeStatusPacket(const Node::Status& nodeStatus)
+{
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto capnNotif = fromBridge.initNotification();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+   auto capnNode = capnNotif.initNodeStatus();
+   nodeStatusToCapnp(nodeStatus, capnNode);
+   return serializeCapnp(message);
+}
+
+BinaryData Serialization::getErrorPacket(const BdvError& error)
+{
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto capnNotif = fromBridge.initNotification();
+   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
+   capnNotif.setError(error.errorStr);
    return serializeCapnp(message);
 }

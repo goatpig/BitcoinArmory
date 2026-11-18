@@ -76,7 +76,7 @@ struct ChainStatus
    chainState  @0 : ChainState;
    blockSpeed  @1 : Float32;
    progress    @2 : Float32;
-   eta         @3 : UInt64;
+   eta         @3 : UInt32;
    blocksLeft  @4 : UInt32;
 }
 

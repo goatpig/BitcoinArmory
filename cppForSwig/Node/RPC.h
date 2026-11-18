@@ -10,13 +10,14 @@
 
 #include <condition_variable>
 #include <memory>
-#include <list>
 #include <string>
 #include <map>
 #include <functional>
 
-#include <Utils/BinaryData.h>
 #include <Utils/ReentrantLock.h>
+#include "Status.h"
+
+class BinaryDataRef;
 
 namespace Armory
 {
@@ -34,29 +35,6 @@ namespace JSON
 ////////
 namespace Node
 {
-   enum class NodeState : int
-   {
-      Offline = 0,
-      Online,
-      OffSync
-   };
-
-   enum class RpcState : int
-   {
-      Disabled = 0,
-      BadAuth,
-      Online,
-      Error_28
-   };
-
-   enum class ChainState : int
-   {
-      Unknown = 0,
-      Syncing,
-      Ready
-   };
-
-   ////////
    class RpcError : public std::runtime_error
    {
    public:
@@ -64,52 +42,6 @@ namespace Node
       RpcError(const std::string&);
    };
 
-   ////////
-   namespace Core
-   {
-      namespace RPC
-      {
-         class Client;
-      }
-   }
-   class ChainStatus
-   {
-      friend class Core::RPC::Client;
-
-   private:
-      std::list<std::tuple<unsigned, uint64_t, uint64_t>> heightTimeVec_;
-      ChainState state_ = ChainState::Unknown;
-      float blockSpeed_ = 0.0f;
-      uint64_t eta_ = 0;
-      float pct_ = 0.0f;
-      unsigned blocksLeft_ = 0;
-      unsigned prevPctInt_ = 0;
-
-   private:
-      bool processState(const JSON::Object&);
-
-   public:
-      void reset(void);
-      void appendHeightAndTime(unsigned, uint64_t);
-
-      unsigned getTopBlock(void) const;
-      ChainState state(void) const;
-      float getBlockSpeed(void) const;
-      float getProgressPct(void) const;
-      uint64_t getETA(void) const;
-      unsigned getBlocksLeft(void) const;
-   };
-
-   ////////
-   struct Status
-   {
-      NodeState state = NodeState::Offline;
-      RpcState rpcState = RpcState::Disabled;
-      bool segWitEnabled = false;
-      ChainStatus chainStatus;
-   };
-
-   ////////
    namespace Core
    {
       namespace RPC
@@ -124,21 +56,13 @@ namespace Node
          static constexpr std::string_view FEE_STRAT_ECONOMICAL{"ECONOMICAL"};
 
          ////////
-         struct FeeEstimate
+         struct FeeSchedulesCache
          {
-            const bool smartFee;
-            const float feeByte;
-            const std::string error;
-         };
-
-         struct FeeEstimateCache
-         {
-            using EstimateMap = std::map<std::string,
-               std::map<unsigned, FeeEstimate>>;
-            const EstimateMap estimates;
+            using ScheduleMap = std::map<std::string, FeeSchedule>;
+            const ScheduleMap schedules;
             const uint32_t timestamp;
 
-            FeeEstimateCache(EstimateMap);
+            FeeSchedulesCache(ScheduleMap);
             bool isValid(void) const;
          };
 
@@ -146,8 +70,7 @@ namespace Node
          class Iface : public Lockable
          {
          protected:
-            ChainStatus nodeChainStatus_;
-            std::unique_ptr<FeeEstimateCache> cachedFees_;
+            std::unique_ptr<FeeSchedulesCache> cachedFees_;
             std::atomic<bool> enabled_ = { true };
             std::condition_variable sleepCV_;
             std::mutex sleepMutex_;
@@ -167,19 +90,18 @@ namespace Node
             virtual void waitOnChainSync(std::function<void(void)>, bool) = 0;
             virtual FeeEstimate getFeeByte(
                unsigned, const std::string&) = 0;
-            virtual const std::map<unsigned, FeeEstimate>& getFeeSchedule(
-               const std::string&) = 0;
+            virtual FeeSchedule getFeeSchedule(const std::string&) = 0;
 
             //locals
-            const ChainStatus& getChainStatus(void) const;
+            ChainStatus getChainStatus(void) const;
          };
 
          ////////
          class Client : public Iface
          {
          private:
+            const bool explicitAuthString_;
             std::string basicAuthString64_;
-            bool canResetAuthString_;
             RpcState previousState_ = RpcState::Disabled;
 
          private:
@@ -189,7 +111,7 @@ namespace Node
 
             float queryFeeByte(Armory::Network::HttpSocket&, unsigned);
             FeeEstimate queryFeeByteSmart(
-               Armory::Network::HttpSocket&, unsigned&, const std::string&);
+               Armory::Network::HttpSocket&, unsigned&, std::string_view);
             void aggregateFeeEstimates(void);
             void resetAuthString(void);
             bool updateChainStatus(void);
@@ -201,7 +123,7 @@ namespace Node
             bool requestNodeShutdown(void) override;
             RpcState testConnection(void) override;
 
-            const std::map<unsigned, FeeEstimate>& getFeeSchedule(
+            FeeSchedule getFeeSchedule(
                const std::string&) override;
             FeeEstimate getFeeByte(unsigned, const std::string&) override;
             int broadcastTx(const BinaryDataRef&, std::string&) override;

@@ -103,12 +103,13 @@ private:
 
    unsigned checkTransactionCount_ = 0;
    Armory::Threading::Queue<std::shared_ptr<BDVNotificationHook>> oneTimeHooks_;
-   std::unique_ptr<std::promise<bool>> startPromise_;
+   std::promise<bool> startPromise_;
+   std::shared_future<bool> startFuture_;
 
 public:
    typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
    std::shared_ptr<Node::Core::P2P::Iface> processNode, watchNode;
-   std::shared_future<void> isReadyFuture;
+   std::shared_future<bool> isReadyFuture;
    mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
 
    std::shared_ptr<Armory::Threading::TimedQueue<
@@ -149,7 +150,7 @@ public:
    void shutdown(void);
    void cleanup(void);
    bool isRunning(void) const;
-   void blockUntilReady(void) const;
+   BDMState waitUntilReady(std::chrono::milliseconds) const;
    bool isReady(void) const;
    void resetDatabases(BdmInitMode);
 

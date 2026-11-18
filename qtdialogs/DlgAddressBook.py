@@ -292,7 +292,7 @@ class DlgAddressBook(ArmoryDialog):
    #############################################################################
    def reject(self):
       self.saveGeometrySettings()
-      super(DlgAddressBook, self).reject(*args)
+      super(DlgAddressBook, self).reject()
 
    #############################################################################
    def setAddrBookTxModel(self, wlt):

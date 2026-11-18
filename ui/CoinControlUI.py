@@ -175,10 +175,9 @@ class RBFDlg(ArmoryDialog):
       self.setWindowTitle(self.tr('RBF (Expert)'))
 
    #############################################################################
-   def reject(self, *args):
+   def reject(self):
       self.saveGeometrySettings()
-      #self.resetTreeData()
-      super(RBFDlg, self).reject(*args)
+      super(RBFDlg, self).reject()
 
    #############################################################################
    def saveGeometrySettings(self):
@@ -192,15 +191,12 @@ class RBFDlg(ArmoryDialog):
    #############################################################################
    def getRBFUtxoList(self):
       treeData = self.rbfTreeModel.treeStruct.getTreeData()
-
       utxoList = []
       for txHash in treeData:
          entryList = treeData[txHash]
          for entry in entryList:
             if isinstance(entry, list):
                continue
-
             if entry.isChecked():
                utxoList.append(entry)
-
       return utxoList

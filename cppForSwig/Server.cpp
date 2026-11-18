@@ -282,7 +282,7 @@ void WebSocketServer::init()
    instance_.store(ptr, std::memory_order_relaxed);
 }
 
-void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
+void WebSocketServer::start(std::shared_ptr<Clients> clients)
 {
    auto instance = getInstance();
    if (instance == nullptr) {
@@ -298,7 +298,7 @@ void WebSocketServer::start(std::shared_ptr<BlockDataManager> bdm)
    if (instance->clients_) {
       throw std::runtime_error("WS server is already started");
    }
-   instance->clients_ = std::make_shared<Clients>(bdm);
+   instance->clients_ = clients;
    instance->clients_->init();
 
    //start command threads

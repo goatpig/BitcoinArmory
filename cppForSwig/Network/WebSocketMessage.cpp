@@ -776,6 +776,11 @@ std::unique_ptr<capnp::MessageReader> CapnpFlatReader::getReader() const
    return std::make_unique<capnp::FlatArrayMessageReader>(words);
 }
 
+const BinaryData& CapnpFlatReader::getRawData() const
+{
+   return packet_;
+}
+
 ////
 CapnpFragmentedReader::CapnpFragmentedReader(
    std::map<uint32_t, BinaryData> dataMap)

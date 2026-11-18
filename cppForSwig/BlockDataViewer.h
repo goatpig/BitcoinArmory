@@ -76,7 +76,6 @@ public:
    std::shared_ptr<ScrAddrFilter> getSAF(void) const;
 
    bool isBDMRunning(void) const;
-   void blockUntilBDMisReady(void) const;
 
    //txios
    std::map<Armory::Types::TxIOKey, TxIOPair>

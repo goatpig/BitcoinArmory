@@ -15,6 +15,7 @@
 #include <future>
 
 #include <Utils/ArmoryErrors.h>
+#include <Utils/ThreadSafeClasses.h>
 #include "BlockDataViewer.h"
 #include "BDV_Notification.h"
 
@@ -34,8 +35,11 @@ namespace Armory
    namespace Network
    {
       class WebSocketMessagePartial;
+      class Socket_WritePayload;
    }
 }
+
+struct RegistrationBatch;
 
 ///////////////////////////////////////////////////////////////////////////////
 struct RpcBroadcastPacket
@@ -71,10 +75,10 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-class Callback
+class PushToClient
 {
 public:
-   virtual ~Callback() = 0;
+   virtual ~PushToClient() = 0;
 
    virtual void push(std::unique_ptr<Armory::Network::Socket_WritePayload>) = 0;
    virtual bool isValid(void) = 0;
@@ -82,13 +86,13 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-class WS_Callback : public Callback
+class PushToWSClient : public PushToClient
 {
 private:
    const Armory::Types::BdvId bdvID_;
 
 public:
-   WS_Callback(const uint64_t& bdvid) :
+   PushToWSClient(const uint64_t& bdvid) :
       bdvID_(bdvid)
    {}
 
@@ -98,7 +102,7 @@ public:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-class UnitTest_Callback : public Callback
+class PushToTestClient : public PushToClient
 {
 private:
    Armory::Threading::BlockingQueue<
@@ -121,34 +125,36 @@ class BdvClient : public BlockDataViewer
 
 private:
    const std::shared_ptr<NotifQueue> notifQueue_;
-   std::atomic<unsigned> started_;
+   std::atomic<int> running_;
    std::thread initT_;
+   std::condition_variable bdmReadyCV_;
+   std::mutex cvMutex_;
 
    const Armory::Types::BdvId bdvID_;
    std::mutex registerWalletMutex_;
    std::mutex processPacketMutex_;
    std::deque<WalletRegistrationRequest> walletRegistrationQueue_;
+   std::shared_ptr<RegistrationBatch> registrationBatch_;
 
-   std::shared_ptr<std::promise<bool>> isReadyPromise_;
-   std::shared_future<bool> isReadyFuture_;
+   std::promise<void> isReadyPromise_;
+   std::shared_future<void> isReadyFuture_;
 
-   std::atomic<unsigned> packetProcess_threadLock_;
-   std::atomic<unsigned> notificationProcess_threadLock_;
+   std::atomic<unsigned> notificationProcessSpinLock_;
 
    std::map<unsigned, Armory::Network::WebSocketMessagePartial> messageMap_;
    unsigned lastValidMessageId_ = 0;
    std::vector<uint8_t> scratchPad_;
 
 public:
-   std::unique_ptr<Callback> notifications_;
+   std::atomic<unsigned> packetProcessSpinLock;
+   std::unique_ptr<PushToClient> pushToClient;
 
 private:
    BdvClient(BdvClient&) = delete; //no copies
    void setup(void);
-   Armory::Network::WebSocketMessagePartial preparePayload(
-      std::shared_ptr<BDV_Payload>);
    std::unique_ptr<BDV_Notification_ZC> createZcNotification(
       const std::set<Armory::Types::ScrAddr>&);
+   bool waitOnBDMReady(void);
 
 public:
    BdvClient(Armory::Types::BdvId,
@@ -164,6 +170,8 @@ public:
    void haltThreads(void);
    std::vector<uint8_t>& getScratchPad(void);
    void flagRefresh(BDV_refresh, const std::string&);
+   Armory::Network::WebSocketMessagePartial preparePayload(
+      std::shared_ptr<BDV_Payload>);
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -194,7 +202,7 @@ private:
 
    std::shared_ptr<BdvClient::NotifQueue> outerBDVNotifStack_;
    Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Notification_Packet>> innerBDVNotifStack_;
-   Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> packetQueue_;
+   Armory::Threading::BlockingQueue<std::shared_ptr<BDV_Payload>> payloadQueue_;
    Armory::Threading::BlockingQueue<Armory::Types::BdvId> unregBDVQueue_;
    Armory::Threading::BlockingQueue<RpcBroadcastPacket> rpcBroadcastQueue_;
 
@@ -216,11 +224,13 @@ public:
 
    void init(void);
    BdvPtr get(Armory::Types::BdvId) const;
+   std::set<Armory::Types::BdvId> getBdvIds(void) const;
    bool registerBDV(const std::string&, Armory::Types::BdvId);
    void unregisterBDV(Armory::Types::BdvId);
    void shutdown(void);
    std::shared_ptr<BlockDataManager> bdm(void) const;
 
+   std::shared_ptr<BDV_Payload> snoopOnPayloadQueue(void);
    void queuePayload(std::shared_ptr<BDV_Payload>&);
    std::unique_ptr<Armory::Network::Socket_WritePayload> processCommand(
       std::shared_ptr<BDV_Payload>);

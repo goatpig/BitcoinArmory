@@ -18,7 +18,7 @@ namespace AsyncClient
 }
 
 class BinaryData;
-class RemoteCallback;
+struct ServerPushHandler;
 
 namespace Armory
 {
@@ -112,12 +112,12 @@ namespace Armory
          std::shared_ptr<NetworkPeers::ClientStore>,
          const std::string&, uint16_t, bool,
          const std::function<bool(const BinaryData&)>&,
-         std::shared_ptr<RemoteCallback>
+         std::shared_ptr<ServerPushHandler>
       );
       BdvPtr setupClientConnection(
          std::shared_ptr<NetworkPeers::ClientStore>,
          const NetworkPeers::PeerKey&,
-         std::shared_ptr<RemoteCallback>
+         std::shared_ptr<ServerPushHandler>
       );
    } //namespace Bridge
 } //namespace Armory

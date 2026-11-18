@@ -1,6 +1,6 @@
 ////////////////////////////////////////////////////////////////////////////////
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig.                                         //
+//  Copyright (C) 2016-2026, goatpig.                                         //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -11,12 +11,6 @@
    #include <windows.h>
 #endif
 
-#include <string>
-#include <iostream>
-#include <sstream>
-#include <chrono>
-
-#include <Utils/ArmoryErrors.h>
 #include <Utils/ArmoryConfig.h>
 #include <Utils/Cryptography.h>
 #include <Utils/BIP150_151.h>
@@ -28,8 +22,8 @@
 
 #include "BDM_mainthread.h"
 #include "Server.h"
+#include "BDM_Server.h"
 #include "TerminalPassphrasePrompt.h"
-#include <btc/ecc.h>
 
 using namespace Armory;
 using namespace std::chrono_literals;
@@ -132,7 +126,8 @@ int main(int argc, char* argv[])
    bdmThread.start(Config::DBSettings::initMode());
 
    //start LWS server, it will return on shutdown
-   WebSocketServer::start(bdmThread.bdm());
+   auto clients = std::make_shared<Clients>(bdmThread.bdm());
+   WebSocketServer::start(clients);
 
    //shutdown BDM and cleanup crypto contexts
    bdmThread.shutdown();

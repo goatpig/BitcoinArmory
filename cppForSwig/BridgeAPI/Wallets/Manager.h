@@ -121,7 +121,7 @@ namespace Armory
 
          /* utils */
          const std::filesystem::path& getWalletsDir(void) const;
-         void updateStateFromDB(std::unique_ptr<Notifications::Push::Payload>);
+         bool updateStateFromDB(std::unique_ptr<Notifications::Push::Payload>);
          std::shared_ptr<const TxIOCache> txioCache(void) const;
          void addUnpooledTxs(const std::vector<BinaryData>&);
          void fetchTxs(std::shared_ptr<AsyncClient::BlockDataViewer>,

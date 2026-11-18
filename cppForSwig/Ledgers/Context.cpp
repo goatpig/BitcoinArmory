@@ -248,7 +248,8 @@ void DBCache::eraseTx(Types::TxKey txKey)
 
 void DBCache::eraseHashes(const std::set<Types::TxHash>& txHashes)
 {
-   //drop every copy of these hashes
+   //drop the mined and zc copies of these hashes. Unpooled copies stay:
+   //the db can still drop a zc it serves now
    for (const auto& txHash : txHashes) {
       auto hashIter = txHashToKey_.find(txHash);
       if (hashIter == txHashToKey_.end()) {
@@ -258,7 +259,10 @@ void DBCache::eraseHashes(const std::set<Types::TxHash>& txHashes)
       //eraseTx edits the candidates, iterate over a copy
       auto txKeys = hashIter->second.keys();
       for (auto txKey : txKeys) {
-         eraseTx(txKey);
+         if (TxKeyCandidates::kindOf(txKey) !=
+            TxKeyCandidates::Kind::Unpooled) {
+            eraseTx(txKey);
+         }
       }
    }
 }
@@ -316,6 +320,40 @@ std::set<Types::TxKey> DBCache::purgeTxs(
       eraseTx(txKey);
    }
    return result;
+}
+
+void DBCache::purgeZC()
+{
+   //drop every zc copy. Mined copies are checked when read, unpooled ones
+   //are the bridge's own: both stay
+   std::vector<Types::TxKey> zcKeys;
+   for (const auto& txPair : txMap_) {
+      if (TxKeyCandidates::kindOf(txPair.first) ==
+         TxKeyCandidates::Kind::Pooled) {
+         zcKeys.emplace_back(txPair.first);
+      }
+   }
+   for (auto txKey : zcKeys) {
+      eraseTx(txKey);
+   }
+}
+
+void DBCache::purgeDbCopies()
+{
+   //drop the headers and every copy the db served, mined or zc. Unpooled
+   //copies are the bridge's own, their keys mean the same to any db: they
+   //stay, and so does the next unpooled id
+   std::vector<Types::TxKey> dbKeys;
+   for (const auto& txPair : txMap_) {
+      if (TxKeyCandidates::kindOf(txPair.first) !=
+         TxKeyCandidates::Kind::Unpooled) {
+         dbKeys.emplace_back(txPair.first);
+      }
+   }
+   for (auto txKey : dbKeys) {
+      eraseTx(txKey);
+   }
+   headers_.clear();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
