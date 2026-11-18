@@ -44,7 +44,6 @@ from qtdialogs.DlgBackupCenter import DlgBackupCenter, DlgSimpleBackup, \
 from qtdialogs.DlgAddressInfo import DlgAddressInfo
 from qtdialogs.DlgChangePassphrase import DlgChangePassphrase
 from qtdialogs.DlgRemoveWallet import DlgRemoveWallet
-from qtdialogs.DlgExportWO import DlgExpWOWltData
 
 ################################################################################
 class DlgWalletDetails(ArmoryDialog):
@@ -123,19 +122,12 @@ class DlgWalletDetails(ArmoryDialog):
          'Permanently delete an imported address from '
          'this wallet.  You cannot delete addresses that '
          'were generated natively by this wallet.'))
-      lbtnExpWOWlt.setToolTip(self.tr(
-         'Export a copy of this wallet that can '
-         'only be used for generating addresses and '
-         'monitoring incoming payments.  A watching-only '
-         'wallet cannot spend the funds, and thus cannot '
-         'be compromised by an attacker'))
+      lbtnExpWOWlt.setToolTip(self.tr('Not available yet in 0.97'))
       lbtnBackups.setToolTip(self.tr(
          'See lots of options for backing up your wallet '
          'to protect the funds in it.'))
       lbtnRemove.setToolTip(self.tr(
-         'Permanently delete this wallet, or just delete '
-         'the private keys to convert it to a watching-only '
-         'wallet.'))
+         'Permanently delete this wallet.'))
       if not self.wlt.watchingOnly:
          lbtnChangeCrypto.setToolTip(self.tr('Add/Remove/Change wallet encryption settings.'))
 
@@ -596,8 +588,9 @@ class DlgWalletDetails(ArmoryDialog):
 
    #############################################################################
    def execExpWOCopy(self):
-      dlg = DlgExpWOWltData(self.wlt, self, self.main)
-      dlg.exec_()
+      QtWidgets.QMessageBox.information(self, self.tr('Not Available'),
+         self.tr('Watching-only export is not available yet in 0.97.'),
+         QtWidgets.QMessageBox.Ok)
 
    #############################################################################
    def setWltDetailsFrame(self):
