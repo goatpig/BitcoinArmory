@@ -177,6 +177,7 @@ namespace AsyncClient
       void start(void);
       void shutdown(void);
       void shutdownNode(void);
+      const std::string& getSocketName(void) const;
 
       //ledgers
       void getTxios(uint32_t,

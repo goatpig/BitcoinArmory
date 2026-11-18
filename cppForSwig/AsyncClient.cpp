@@ -214,6 +214,14 @@ bool BlockDataViewer::connectToRemote()
    return sock_->connectToRemote();
 }
 
+const std::string& BlockDataViewer::getSocketName() const
+{
+   if (sock_ == nullptr) {
+      throw std::runtime_error("null socket");
+   }
+   return sock_->name();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 void BlockDataViewer::addPublicKey(const SecureBinaryData& pubkey, bool oneWay)
 {

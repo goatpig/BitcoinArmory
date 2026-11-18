@@ -184,7 +184,7 @@ public:
       float progress, unsigned secondsRem,
       unsigned progressNumeric
    ) = 0;
-   virtual void disconnected(void) = 0;
+   virtual void disconnected(const std::string&) = 0;
 
    bool processNotifications(std::unique_ptr<capnp::MessageReader>);
 };

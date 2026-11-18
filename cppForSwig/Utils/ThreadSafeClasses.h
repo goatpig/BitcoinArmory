@@ -470,7 +470,7 @@ namespace Armory
             return retConstMap;
          }
 
-         void clear(void)
+         std::map<T, U> clear(void)
          {
             std::unique_lock<std::mutex> lock(mu_);
             auto thisMap = map_.load();
@@ -478,6 +478,7 @@ namespace Armory
 
             count_.store(0, std::memory_order_relaxed);
             map_.store(newMap);
+            return *thisMap;
          }
 
          size_t size(void) const
