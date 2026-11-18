@@ -2389,6 +2389,7 @@ Signer Signer::fromPSBT(BinaryDataRef psbtRef)
 
    Tx unsignedTx(unsignedTxRef);
    signer.setVersion(unsignedTx.getVersion());
+   signer.setLockTime(unsignedTx.getLockTime());
 
    /** txin section **/
    for (unsigned i=0; i < unsignedTx.getNumTxIn(); i++) {
