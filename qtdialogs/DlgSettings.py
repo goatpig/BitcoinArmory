@@ -193,9 +193,9 @@ class DlgSettings(ArmoryDialog):
       ##########################################################################
       # System tray notifications. On OS X, notifications won't work on 10.7.
       # OS X's built-in notification system was implemented starting in 10.8.
-      osxMinorVer = '0'
+      osxVer = [0, 0]
       if OS_MACOSX:
-         osxMinorVer = OS_VARIANT[0].split(".")[1]
+         osxVer = [int(n) for n in OS_VARIANT[0].split(".")]
 
       lblNotify = QRichLabel(self.tr(
          '<b>Enable notifications from the system-tray:</b>'))
@@ -207,7 +207,7 @@ class DlgSettings(ArmoryDialog):
          self.tr('Bitcoin Core/bitcoind reconnected'))
 
         # FYI:If we're not on OS X, the if condition will never be hit.
-      if (OS_MACOSX) and (int(osxMinorVer) < 7):
+      if (OS_MACOSX) and (osxVer < [10, 7]):
          lblNotify = QRichLabel(self.tr(
             '<b>Sorry!  Notifications are not available '
             'on your version of OS X.</b>'))
