@@ -508,9 +508,9 @@ namespace {
       //virtuals
       void pushRegistered(const SocketName&) const override {}
       void pushNodeStatus(const Node::Status&) const override {}
-      void pushProgress(BDMPhase,
-         const std::vector<std::string>&,
-         float, unsigned, unsigned
+      void pushProgress(
+         const BDMProgress::Tick&,
+         const std::vector<std::string>&
       ) const override {}
 
       void pushReady(const SocketName&,

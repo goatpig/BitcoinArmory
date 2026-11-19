@@ -15,7 +15,7 @@
 #include <Utils/Types.h>
 #include <BlockchainDatabase/txio.h>
 #include <Node/RPC.h>
-#include "bdmenums.h"
+#include "Progress.h"
 
 #define FILTER_CHANGE_FLAG "wallet_filter_changed"
 
@@ -98,9 +98,9 @@ struct ServerPushHandler
    virtual void pushRegistered(const SocketName&) const = 0;
    virtual void pushDisconnected(const SocketName&) const = 0;
    virtual void pushNodeStatus(const Node::Status&) const = 0;
-   virtual void pushProgress(BDMPhase,
-      const std::vector<std::string>&,
-      float, unsigned, unsigned
+   virtual void pushProgress(
+      const Armory::BDMProgress::Tick&,
+      const std::vector<std::string>&
    ) const = 0;
 
    virtual void pushReady(const SocketName&, const NewBlockNotif&) const = 0;

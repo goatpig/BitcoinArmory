@@ -61,14 +61,12 @@ protected:
       uint32_t startBlock, const std::vector<std::string>& wltIDs,
       bool reportProgress) override
    {
-      const auto progress = [&](
-         BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
+      const auto progress = [&](const BDMProgress::Tick& tick)
       {
          if (!reportProgress) {
             return;
          }
-         auto notifPtr = std::make_unique<BDV_Notification_Progress>(
-            phase, prog, time, numericProgress, wltIDs);
+         auto notifPtr = std::make_unique<BDV_Notification_Progress>(tick, wltIDs);
          bdm_->notificationQueue->push_back(std::move(notifPtr));
       };
       auto result = bdm_->applyBlockRangeToDB(progress, startBlock, *this);
@@ -234,14 +232,14 @@ void BlockDataManager::resetDatabases(BdmInitMode mode)
 
 ////////
 bool BlockDataManager::doInitialSyncOnLoad(BdmInitMode mode,
-   const ProgressCallback &progress)
+   const BDMProgress::ReportFunc &progress)
 {
    LOGINFO << "Executing: doInitialSyncOnLoad";
    resetDatabases(mode);
    return loadDiskState(progress);
 }
 
-bool BlockDataManager::loadDiskState(const ProgressCallback &progress)
+bool BlockDataManager::loadDiskState(const BDMProgress::ReportFunc& progress)
 {
    scrAddrData_->start();
    BDMstate_.store((int)BDMState::Initializing, std::memory_order_relaxed);
@@ -266,13 +264,14 @@ ReorganizationState BlockDataManager::readBlkFileUpdate()
 }
 
 Hash32 BlockDataManager::applyBlockRangeToDB(
-   ProgressCallback prog, uint32_t blk0, ScrAddrFilter& scrAddrData)
+   const BDMProgress::ReportFunc& prog, uint32_t blk0,
+   ScrAddrFilter& scrAddrData)
 {
    // Start scanning and timer
    BlockchainScanner bcs(blockchain_, iface_, &scrAddrData,
       blockFiles_,
       Config::DBSettings::threadCount(), Config::DBSettings::ramUsage(),
-      prog, Config::DBSettings::reportProgress());
+      Config::DBSettings::reportProgress() ? prog : nullptr);
 
    //no need to setup a context for a side scan, it assumes
    //address history is fresh

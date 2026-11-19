@@ -277,15 +277,13 @@ std::future<bool> ParserBatch::preloadFiles(
 // BlockchainScanner
 BlockchainScanner::BlockchainScanner(
    std::shared_ptr<Blockchain> bc, LMDBBlockDatabase* db,
-   ScrAddrFilter* saf,
-   std::shared_ptr<BlockFiles> bf,
+   ScrAddrFilter* saf, std::shared_ptr<BlockFiles> bf,
    unsigned threadcount, unsigned memtarget,
-   ProgressCallback prg, bool reportProgress) :
+   const BDMProgress::ReportFunc& prg) :
    blockchain_(bc), db_(db), scrAddrFilter_(saf),
    blockFiles_(bf),
    totalThreadCount_(threadcount), memTarget_(memtarget),
-   totalBlockFileCount_(bf->fileCount()),
-   progress_(prg), reportProgress_(reportProgress)
+   totalBlockFileCount_(bf->fileCount()), progress_(prg)
 {
    fatalError_.store(0, std::memory_order_relaxed);
 }
@@ -795,14 +793,12 @@ void BlockchainScanner::commitBatches()
       return val;
    };
 
-   ProgressCalculator calc(getGlobalOffsetForBlock(
+   BDMProgress::Calculator calc(getGlobalOffsetForBlock(
       blockchain_->top()->getBlockHeight()));
    auto initVal = getGlobalOffsetForBlock(startAt_);
    calc.init(initVal);
-   if (reportProgress_) {
-      progress_(BDMPhase_Rescan,
-      calc.fractionCompleted(), UINT32_MAX,
-      initVal);
+   if (progress_) {
+      progress_({BDMProgress::Phase::ScanBlocks, calc});
    }
 
    TIMER_RESET("write");
@@ -909,10 +905,8 @@ void BlockchainScanner::commitBatches()
 
       size_t progVal = getGlobalOffsetForBlock(batch->end);
       calc.advance(progVal);
-      if (reportProgress_) {
-         progress_(BDMPhase_Rescan,
-         calc.fractionCompleted(), calc.remainingSeconds(),
-         progVal);
+      if (progress_) {
+         progress_({BDMProgress::Phase::ScanBlocks, calc});
       }
       topScannedBlockHash_ = topheader->getThisHash();
 

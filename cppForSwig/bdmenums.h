@@ -35,19 +35,6 @@ enum class BDMState : int
    InitializationFailed
 };
 
-enum BDMPhase
-{
-   BDMPhase_DBHeaders = 1,
-   BDMPhase_OrganizingChain,
-   BDMPhase_BlockHeaders,
-   BDMPhase_BlockData,
-   BDMPhase_Rescan,
-   BDMPhase_Balance,
-   BDMPhase_SearchHashes,
-   BDMPhase_ResolveHashes,
-   BDMPhase_Completed
-};
-
 enum class ARMORY_DB_TYPE : int
 {
    Bare = 1,

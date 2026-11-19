@@ -235,8 +235,9 @@ namespace DBTestUtils
       void pushDisconnected(const SocketName&) const override {}
       void pushNodeStatus(const Node::Status&) const override {}
       void pushProgress(
-         BDMPhase, const std::vector<std::string>&,
-         float, unsigned, unsigned) const override {}
+         const Armory::BDMProgress::Tick&,
+         const std::vector<std::string>&
+      ) const override {}
 
       ////////
       NotifPtr waitOnNotification(BDMAction actionType)

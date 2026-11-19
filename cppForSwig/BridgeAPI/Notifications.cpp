@@ -154,24 +154,21 @@ void Push::NotifHandler::pushError(const BdvError& error) const
 
 ////////
 void Push::NotifHandler::pushProgress(
-   BDMPhase phase,
-   const std::vector<std::string> &walletIdVec,
-   float progress, unsigned secondsRem,
-   unsigned progressNumeric) const
+   const BDMProgress::Tick& tick,
+   const std::vector<std::string> &walletIdVec) const
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    auto capnProgress = capnNotif.initScanProgress();
 
-   capnProgress.setPhase((uint32_t)phase);
-   capnProgress.setProgress(progress);
-   capnProgress.setTime(secondsRem);
-   capnProgress.setNumericProgress(progressNumeric);
+   capnProgress.setPhase((Codec::Types::ScanProgress::Phase)tick.phase);
+   capnProgress.setProgress(tick.progress);
+   capnProgress.setTime(tick.etaSec);
 
    if (!walletIdVec.empty()) {
       auto capnIds = capnProgress.initIds(walletIdVec.size());
-      for (unsigned i=0; i<walletIdVec.size(); i++) {
+      for (unsigned i = 0; i < walletIdVec.size(); i++) {
          capnIds.set(i, walletIdVec[i]);
       }
    }

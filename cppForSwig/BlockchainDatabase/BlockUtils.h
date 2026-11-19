@@ -5,7 +5,7 @@
 //  See LICENSE-ATI or http://www.gnu.org/licenses/agpl.html                  //
 //                                                                            //
 //                                                                            //
-//  Copyright (C) 2016-2025, goatpig                                          //
+//  Copyright (C) 2016-2026, goatpig                                          //
 //  Distributed under the MIT license                                         //
 //  See LICENSE-MIT or https://opensource.org/licenses/MIT                    //
 //                                                                            //
@@ -21,7 +21,7 @@
 #include <exception>
 #include <functional>
 
-#include <bdmenums.h>
+#include <Progress.h>
 #include "ScrAddrFilter.h"
 
 class BlockFiles;
@@ -65,25 +65,6 @@ namespace Node
    }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-struct ProgressData
-{
-   BDMPhase phase_;
-   double progress_;
-   unsigned time_;
-   unsigned numericProgress_;
-   std::vector<std::string> wltIDs_;
-
-   ProgressData(void)
-   {}
-
-   ProgressData(BDMPhase phase, double prog,
-      unsigned time, unsigned numProg, std::vector<std::string> wltIDs) :
-      phase_(phase), progress_(prog), time_(time),
-      numericProgress_(numProg), wltIDs_(wltIDs)
-   {}
-};
-
 ////////////////////////////////////////////////////////////////////////////////
 class BlockDataManager
 {
@@ -107,7 +88,6 @@ private:
    std::shared_future<bool> startFuture_;
 
 public:
-   typedef std::function<void(BDMPhase, double,unsigned, unsigned)> ProgressCallback;
    std::shared_ptr<Node::Core::P2P::Iface> processNode, watchNode;
    std::shared_future<bool> isReadyFuture;
    mutable std::shared_ptr<Node::Core::RPC::Iface> nodeRPC;
@@ -116,7 +96,7 @@ public:
       std::unique_ptr<BDV_Notification>>> notificationQueue;
 
 private:
-   bool loadDiskState(const ProgressCallback&);
+   bool loadDiskState(const Armory::BDMProgress::ReportFunc&);
 
 public:
    BlockDataManager(void);
@@ -129,12 +109,12 @@ public:
    std::shared_ptr<ScrAddrFilter> getScrAddrFilter(void) const;
 
    void openDatabase(void);
-   bool doInitialSyncOnLoad(BdmInitMode, const ProgressCallback&);
+   bool doInitialSyncOnLoad(BdmInitMode, const Armory::BDMProgress::ReportFunc&);
    bool hasException(void) const;
    std::exception_ptr getException(void) const;
 
    Armory::ReorganizationState readBlkFileUpdate(void);
-   Armory::Hash32 applyBlockRangeToDB(ProgressCallback,
+   Armory::Hash32 applyBlockRangeToDB(const Armory::BDMProgress::ReportFunc&,
       uint32_t, ScrAddrFilter&);
    std::pair<Armory::Hash32, Armory::Hash32> getLastScannedRange(void) const;
 

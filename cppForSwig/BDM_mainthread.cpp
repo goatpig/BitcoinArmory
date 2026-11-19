@@ -203,12 +203,11 @@ void BlockDataManagerThread::run()
          case Sequence::SYNC_DB:
          {
             const auto loadProgress = [queue=bdm->notificationQueue](
-               BDMPhase phase, double prog, unsigned time, unsigned numericProgress)
+               const BDMProgress::Tick& tick)
             {
                //pass empty walletID for main build&scan calls
                auto notifPtr = std::make_unique<BDV_Notification_Progress>(
-                  phase, prog, time, numericProgress,
-                  std::vector<std::string>{}
+                  tick, std::vector<std::string>{}
                );
                queue->push_back(std::move(notifPtr));
             };

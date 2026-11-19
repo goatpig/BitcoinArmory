@@ -20,18 +20,7 @@
 #include <Ledgers/LedgerEntry.h>
 #include <Ledgers/HistoryPager.h>
 #include "ScrAddrObj.h"
-#include "bdmenums.h"
 #include "TxClasses.h"
-
-struct ScanWalletStruct
-{
-   BDV_Action action_;
-
-   unsigned prevTopBlockHeight_;
-   unsigned startBlock_;
-   unsigned endBlock_ = UINT32_MAX;
-   bool reorg_ = false;
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 class BtcWallet
