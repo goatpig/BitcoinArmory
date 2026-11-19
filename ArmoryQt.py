@@ -59,10 +59,7 @@ from armoryengine.CppBridge import TheBridge
 from armoryengine.UserAddressUtils import getScriptForUserStringImpl, \
    getDisplayStringForScriptImpl
 from armoryengine.BDM import TheBDM, \
-   BDM_BLOCKCHAIN_READY, BDM_SCANNING, BDM_UNINITIALIZED, BDM_OFFLINE, \
-   BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
-   BDMPhase_BlockHeaders, BDMPhase_BlockData, BDMPhase_Rescan, \
-   BDMPhase_Balance, BDMPhase_SearchHashes, BDMPhase_ResolveHashes
+   BDM_BLOCKCHAIN_READY, BDM_SCANNING, BDM_UNINITIALIZED, BDM_OFFLINE
 
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.Transaction import getTxsByHash
@@ -112,15 +109,6 @@ from armorymodels import AllWalletsDispModel, AllWalletsCheckboxDelegate, \
 NodeStatus_Offline = 0
 NodeStatus_Online = 1
 NodeStatus_OffSync = 2
-
-RpcStatus_Disabled = 0
-RpcStatus_BadAuth = 1
-RpcStatus_Online = 2
-RpcStatus_Error_28 = 3
-
-ChainStatus_Unknown = 0
-ChainStatus_Syncing = 1
-ChainStatus_Ready = 2
 
 ####
 if sys.version_info < (3,0):
@@ -237,6 +225,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       self.wallets = wallets
 
       self.nodeStatus = None
+      self.bdmStatus = None
       self.numHeartBeat = 0
 
       # Error and exit on both regtest and testnet
@@ -1627,16 +1616,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          if manageSatoshi == True:
             self.satoshiHomePath = str(TheSettings.get('SatoshiDatadir'))
             LOGINFO('Setting satoshi datadir = %s' % self.satoshiHomePath)
-
-      TheBDM.setSatoshiDir(self.satoshiHomePath)
-      TheSDM.setSatoshiDir(self.satoshiHomePath)
-
-   ############################################################################
-   # This version of online mode is possible doesn't check the internet everytime
-   def isOnlineModePossible(self):
-      return self.internetStatus != INTERNET_STATUS.Unavailable and \
-               TheSDM.satoshiIsAvailable() and \
-               os.path.exists(os.path.join(TheBDM.btcdir, 'blocks'))
 
    ############################################################################
    def loadBlockchainIfNecessary(self):
@@ -3458,91 +3437,75 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.barProgressScan.setVisible(True)
          self.lblTimeLeftScan.setVisible(False)
 
-         phase,pct,tleft,numericProgress = TheBDM.predictLoadTime()
-         if phase==BDMPhase_DBHeaders:
-            self.lblDashModeBuild.setText( self.tr('Loading Database Headers'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
-                                        size=4, bold=True, color='DisableFG')
+         if self.bdmStatus == None:
+            LOGWARN("updateSyncProgress was called with an empty bdmStatus")
+            return
+         phase = str(self.bdmStatus.phase)
+         pct = self.bdmStatus.progress
+         tleft = self.bdmStatus.etaSec
+
+         if phase == 'loadHeaders':
+            self.lblDashModeBuild.setText(
+               self.tr('Loading Database Headers'),
+               size=4, bold=True, color='Foreground')
+            self.lblDashModeScan.setText(
+               self.tr('Scan Transaction History'),
+               size=4, bold=True, color='DisableFG')
             self.barProgressBuild.setFormat('%p%')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
 
-         elif phase==BDMPhase_OrganizingChain:
-            self.lblDashModeBuild.setText( self.tr('Organizing Blockchain'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
-                                        size=4, bold=True, color='DisableFG')
+         elif phase == 'organizeHeaders':
+            self.lblDashModeBuild.setText(
+               self.tr('Organizing Blockchain'),
+               size=4, bold=True, color='Foreground')
+            self.lblDashModeScan.setText(
+               self.tr('Scan Transaction History'),
+               size=4, bold=True, color='DisableFG')
             self.barProgressBuild.setFormat('')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setValue(0)
             self.barProgressBuild.setRange(0,0)
             self.lblTimeLeftBuild.setVisible(False)
             self.lblTimeLeftScan.setVisible(False)
-         elif phase==BDMPhase_BlockHeaders:
-            self.lblDashModeBuild.setText( self.tr('Reading New Block Headers'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
-                                        size=4, bold=True, color='DisableFG')
+
+         elif phase == 'parseNewHeaders':
+            self.lblDashModeBuild.setText(
+               self.tr('Reading New Block Headers'),
+               size=4, bold=True, color='Foreground')
+            self.lblDashModeScan.setText(
+               self.tr('Scan Transaction History'),
+               size=4, bold=True, color='DisableFG')
             self.barProgressBuild.setFormat('%p%')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
-         elif phase==BDMPhase_BlockData:
-            self.lblDashModeBuild.setText( self.tr('Building Databases'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblDashModeScan.setText( self.tr('Scan Transaction History'), \
-                                        size=4, bold=True, color='DisableFG')
+
+         elif phase == 'parseNewBlocks':
+            self.lblDashModeBuild.setText(
+               self.tr('Building Databases'),
+               size=4, bold=True, color='Foreground')
+            self.lblDashModeScan.setText(
+               self.tr('Scan Transaction History'),
+               size=4, bold=True, color='DisableFG')
             self.barProgressBuild.setFormat('%p%')
             self.barProgressScan.setFormat('')
             self.barProgressBuild.setRange(0,100)
-         elif phase==BDMPhase_Rescan:
-            self.lblDashModeBuild.setText( self.tr('Build Databases'), \
-                                        size=4, bold=True, color='DisableFG')
-            self.lblDashModeScan.setText( self.tr('Scanning Transaction History'), \
-                                        size=4, bold=True, color='Foreground')
+
+         elif phase == 'scanBlocks':
+            self.lblDashModeBuild.setText(
+               self.tr('Build Databases'),
+               size=4, bold=True, color='DisableFG')
+            self.lblDashModeScan.setText(
+               self.tr('Scanning Transaction History'),
+               size=4, bold=True, color='Foreground')
             self.lblTimeLeftBuild.setVisible(False)
             self.barProgressBuild.setFormat('')
             self.barProgressBuild.setValue(100)
             self.barProgressBuild.setRange(0,100)
             self.barProgressScan.setFormat('%p%')
-         elif phase==BDMPhase_Balance:
-            self.lblDashModeBuild.setText( self.tr('Build Databases'), \
-                                        size=4, bold=True, color='DisableFG')
-            self.lblDashModeScan.setText( self.tr('Computing Balances'), \
-                                        size=4, bold=True, color='Foreground')
-            self.barProgressBuild.setFormat('')
-            self.barProgressScan.setFormat('')
-            self.barProgressBuild.setValue(0)
-            self.barProgressBuild.setRange(0,0)
-            self.lblTimeLeftBuild.setVisible(False)
-         elif phase==BDMPhase_SearchHashes:
-            self.lblDashModeBuild.setText( self.tr('Build Databases'), \
-                                        size=4, bold=True, color='DisableFG')
-            self.lblDashModeScan.setText( self.tr('Parsing Tx Hashes'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblTimeLeftBuild.setVisible(False)
-            self.barProgressBuild.setFormat('')
-            self.barProgressBuild.setValue(100)
-            self.barProgressBuild.setRange(0,100)
-            self.lblTimeLeftScan.setVisible(False)
-            self.barProgressScan.setFormat('')
-            self.barProgressScan.setValue(0)
-            self.barProgressScan.setRange(0,0)
-            self.lblTimeLeftScan.setVisible(False)
-         elif phase==BDMPhase_ResolveHashes:
-            self.lblDashModeBuild.setText( self.tr('Build Databases'), \
-                                        size=4, bold=True, color='DisableFG')
-            self.lblDashModeScan.setText( self.tr('Resolving Tx Hashes'), \
-                                        size=4, bold=True, color='Foreground')
-            self.lblTimeLeftBuild.setVisible(False)
-            self.barProgressBuild.setFormat('')
-            self.barProgressBuild.setValue(100)
-            self.barProgressBuild.setRange(0,100)
-            self.lblTimeLeftBuild.setVisible(False)
-            self.barProgressScan.setFormat('')
-            self.barProgressScan.setValue(100)
-            self.barProgressScan.setRange(0,100)
-            self.barProgressScan.setFormat('%p%')
+
+         else:
+            LOGWARN(f"unknown bdm phase: {phase}")
 
          showPct = True
          if tleft != 2**32 - 1:
@@ -3553,16 +3516,15 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          pvalue = pct*100
 
          if showPct:
-            if phase==BDMPhase_BlockHeaders or phase==BDMPhase_BlockData or phase==BDMPhase_DBHeaders:
+            if phase in ['loadHeaders', 'parseNewHeader', 'parseNewBlocks']:
                self.lblTimeLeftBuild.setText(tstring)
                self.barProgressBuild.setValue(int(pvalue))
-            elif phase==BDMPhase_Rescan or BDMPhase_ResolveHashes:
+            elif phase == 'scanBlocks':
                self.lblTimeLeftScan.setText(tstring)
                self.barProgressScan.setValue(int(pvalue))
                self.lblTimeLeftScan.setVisible(True)
 
       elif sdmStr in ['NodeStatus_Initializing','NodeStatus_Syncing']:
-
          self.lblDashModeSync.setVisible(True)
          self.barProgressSync.setVisible(True)
          self.lblTimeLeftSync.setVisible(True)
@@ -3598,6 +3560,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             return ('UNKNOWN','UNKNOWN', 'UNKNOWN')
 
          self.barProgressSync.setValue(sdmPercent)
+
       else:
          LOGWARN('Called updateSyncProgress while not sync\'ing')
 
@@ -4014,7 +3977,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       descr1 = ''
       descr2 = ''
 
-
       # Methods for showing/hiding groups of widgets on the dashboard
       def setBtnRowVisible(r, visBool):
          for c in range(3):
@@ -4188,8 +4150,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.lblTimeLeftSync.setVisible(True)
             self.lblDashModeSync.setVisible(True)
             self.lblTimeLeftSync.setText('')
-            self.lblDashModeSync.setText( self.tr('Synchronizing with Network'), \
-                                    size=4, bold=True, color='DisableFG')
+            self.lblDashModeSync.setText(
+               self.tr('Synchronizing with Network'),
+               size=4, bold=True, color='DisableFG')
          else:
             self.barProgressSync.setVisible(False)
             self.lblTimeLeftSync.setVisible(False)
@@ -4215,6 +4178,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.lblDashDescr1.setText(descr)
          self.lblDashDescr2.setText('')
          self.mainDisplayTabs.setCurrentIndex(self.MAINTABS.Dash)
+
       elif bdmState == BDM_OFFLINE:
          self.mainDisplayTabs.setTabEnabled(self.MAINTABS.Ledger, False)
          setOnlyDashModeVisible()
@@ -4232,6 +4196,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          descr2 += self.GetDashFunctionalityText('Offline')
          self.lblDashDescr1.setText(descr1)
          self.lblDashDescr2.setText(descr2)
+
       else:
          LOGERROR('What the heck blockchain mode are we in?  %s', bdmState)
 
@@ -4247,8 +4212,8 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
       if self.lblBusy.isVisible():
          self.numHeartBeat += 1
-         self.lblBusy.setPixmap(QtGui.QPixmap('./img/loadicon_%d.png' % \
-                                             (self.numHeartBeat%6)))
+         self.lblBusy.setPixmap(
+            QtGui.QPixmap('./img/loadicon_%d.png' % (self.numHeartBeat%6)))
 
    #############################################################################
    def createAddressEntryWidgets(self, parent, initString='', maxDetectLen=128,
@@ -4554,6 +4519,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          if not idList:
             #no explicit scan ids, this is a BDM scan notif
+            self.bdmStatus = notifProto.scanProgress
             self.setDashboardDetails()
             self.updateSyncProgress()
             return

@@ -1052,7 +1052,7 @@ void BdvClient::processNotification(
 
          progressNotif.setPhase((Codec::Types::ScanProgress::Phase)payload->tick.phase);
          progressNotif.setProgress(payload->tick.progress);
-         progressNotif.setTime(payload->tick.etaSec);
+         progressNotif.setEtaSec(payload->tick.etaSec);
 
          if (payload->walletIDs.empty()) {
             break;

@@ -114,7 +114,7 @@ struct ScanProgress {
 
    phase                @0 : Phase;
    progress             @1 : Float32;
-   time                 @2 : UInt32;
+   etaSec               @2 : UInt32;
    ids                  @3 : List(Text);
 }
 

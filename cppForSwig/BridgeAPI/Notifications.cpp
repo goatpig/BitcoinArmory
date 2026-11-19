@@ -164,7 +164,7 @@ void Push::NotifHandler::pushProgress(
 
    capnProgress.setPhase((Codec::Types::ScanProgress::Phase)tick.phase);
    capnProgress.setProgress(tick.progress);
-   capnProgress.setTime(tick.etaSec);
+   capnProgress.setEtaSec(tick.etaSec);
 
    if (!walletIdVec.empty()) {
       auto capnIds = capnProgress.initIds(walletIdVec.size());
