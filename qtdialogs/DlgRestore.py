@@ -12,7 +12,7 @@
 
 from qtpy import QtWidgets
 
-from armoryengine.CppBridge import TheBridge, ServerPush
+from armoryengine.CppBridge import TheBridge, BridgePrompt
 from armoryengine.ArmoryUtils import LOGERROR, LOGWARN, \
    UINT32_MAX, UINT8_MAX, UNKNOWN
 from armoryengine.BDM import TheBDM
@@ -66,9 +66,9 @@ class MaskedInputLineEdit(QtWidgets.QLineEdit):
          self.setCursorPosition(0)
 
 ################################################################################
-class DlgRestoreSingle(ArmoryDialog, ServerPush):
+class DlgRestoreSingle(ArmoryDialog, BridgePrompt):
    def __init__(self, parent, main, thisIsATest=False, expectWltID=None):
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       ArmoryDialog.__init__(self, parent, main)
 
       self.newWltID = None
@@ -272,7 +272,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
    ########
    def processCallback(self, payload):
       if payload.which() == 'cleanup':
-         TheBDM.unregisterPrompt(self.callbackId)
+         TheBDM.unregisterPrompt(self.promptId)
          return
 
       elif payload.which() == 'setPassphrase':
@@ -417,7 +417,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
       from users, verifyBackupString set of notifications is complex and comes
       with branches.
 
-      A dedicated callbackId is generated for this interaction and passed to
+      A dedicated promptId is generated for this interaction and passed to
       TheBDM callback map along with a py side method to handle the proto
       packet from the C++ side.
 
@@ -436,7 +436,7 @@ class DlgRestoreSingle(ArmoryDialog, ServerPush):
 
       TheBridge.utils.restoreWallet(
          root, chaincode, spPass,
-         self.callbackId, handleReplyCb)
+         self.promptId, handleReplyCb)
 
       '''
       if self.chkEncrypt.isChecked() and self.advancedOptionsTab.getKdfSec() == -1:

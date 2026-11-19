@@ -55,15 +55,11 @@ from armoryengine.AddressUtils import base58_to_binary, Hash160ToScrAddr, \
 
 from armoryengine.Block import PyBlock
 from armoryengine.Decorators import RemoveRepeatingExtensions
-from armoryengine.CppBridge import TheBridge, ServerPush
+from armoryengine.CppBridge import TheBridge
 from armoryengine.UserAddressUtils import getScriptForUserStringImpl, \
    getDisplayStringForScriptImpl
 from armoryengine.BDM import TheBDM, \
    BDM_BLOCKCHAIN_READY, BDM_SCANNING, BDM_UNINITIALIZED, BDM_OFFLINE, \
-   NEW_ZC_ACTION, NEW_BLOCK_ACTION, \
-   REFRESH_ACTION, WARNING_ACTION, WARNING_ACTION, SCAN_ACTION, \
-   NODESTATUS_UPDATE, BDM_SCAN_PROGRESS, BDV_ERROR, BDV_DISCONNECTED, \
-   INIT_DB_CONNECTED, INIT_WALLETS_REGISTERED, INIT_DB_READY, \
    BDMPhase_DBHeaders, BDMPhase_OrganizingChain, \
    BDMPhase_BlockHeaders, BDMPhase_BlockData, BDMPhase_Rescan, \
    BDMPhase_Balance, BDMPhase_SearchHashes, BDMPhase_ResolveHashes
@@ -277,9 +273,9 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       '''
 
       #push model BDM notify signal
-      def cppNotifySignal(action, arglist):
-         TheSignalExecution.executeMethod(self.handleCppNotification,
-            action, arglist)
+      def cppNotifySignal(protoNotif):
+         TheSignalExecution.executeMethod(
+            self.handleCppNotification, protoNotif)
 
       #notifications are held until the UI is built, see
       #processQueuedCppNotifications
@@ -4392,24 +4388,25 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
    def processQueuedCppNotifications(self):
       queue = self.queuedCppNotifications
       self.queuedCppNotifications = None
-      for action, args in queue:
+      for notifProto in queue:
          #an exception in a Qt slot only gets reported, do the same here
          #rather than abort the main window construction
          try:
-            self.handleCppNotification(action, args)
+            self.handleCppNotification(notifProto)
          except Exception:
-            LOGEXCEPT('Error processing queued notification: %s', action)
+            LOGEXCEPT(f"Error processing queued notification: {notifProto}")
 
    #############################################################################
-   def handleCppNotification(self, action, args):
+   def handleCppNotification(self, notifProto):
       if self.queuedCppNotifications is not None:
          #The main window is still being built. Modal dialogs shown from
          #__init__ (e.g. the EULA) run their own event loop, which delivers
          #notifications before the widgets the handlers below use exist.
-         self.queuedCppNotifications.append((action, args))
+         self.queuedCppNotifications.append(notifProto)
          return
 
-      if action == INIT_DB_READY:
+      which = notifProto.which()
+      if which == 'ready':
          #Blockchain just finished loading, finish initializing UI and render
          #the ledgers
          self.nodeStatus = TheBridge.service.getNodeStatus()
@@ -4420,7 +4417,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
          self.setDashboardDetails()
          self.updateStatusBarText()
 
-      elif action == NEW_ZC_ACTION and not CLI_OPTIONS.ignoreZC:
+      elif which == 'zeroConfs' and not CLI_OPTIONS.ignoreZC:
          #A zero conf Tx conerns one of the address Armory is tracking, pull the
          #updated ledgers from the BDM and create the related notifications.
 
@@ -4430,10 +4427,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
-         self.notifyNewZeroConf(args)
+         self.notifyNewZeroConf(notifProto.zeroConfs)
          self.createCombinedLedger()
 
-      elif action == NEW_BLOCK_ACTION:
+      elif which == 'newBlock':
          #A new block has appeared, pull updated ledgers from the BDM, display
          #the new block height in the status bar and note the block received time
 
@@ -4443,21 +4440,23 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
-         if args > 0:
+         newHeight = notifProto.newBlock
+         if newHeight > 0:
             self.ledgerModel.reset()
-            LOGINFO('New Block! : %d', TheBDM.getTopBlockHeight())
+            LOGINFO('New Block! : %d', newHeight)
 
             self.createCombinedLedger()
             self.blkReceived = RightNow()
             TheSettings.set('LastBlkRecvTime', self.blkReceived)
-            TheSettings.set('LastBlkRecv', TheBDM.getTopBlockHeight())
+            TheSettings.set('LastBlkRecv', newHeight)
 
             # Update the wallet view to immediately reflect new balances
             self.walletModel.reset()
             self.updateStatusBarText()
 
-      elif action == REFRESH_ACTION:
-         for dbId in args:
+      elif which == 'refresh':
+         refreshIds = notifProto.refresh
+         for dbId in refreshIds:
             if dbId == "wallet_filter_changed":
                continue
             self.wallets.syncWalletData(dbId)
@@ -4476,11 +4475,11 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             return
 
          reset = False
-         if len(args) == 0:
+         if len(refreshIds) == 0:
             self.createCombinedLedger()
             return
 
-         for dbId in args:
+         for dbId in refreshIds:
             if not dbId:
                continue
 
@@ -4520,33 +4519,44 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          self.createCombinedLedger(reset)
 
-      elif action == WARNING_ACTION:
+      elif which == 'error':
          #something went wrong on the C++ side, create a message box to report
          #it to the user
-         if 'rescan' in args.lower() or 'rebuild' in args.lower():
-            result = MsgBoxWithDNAA(self, self, MSGBOX.Critical, self.tr('BDM error!'), args,
+         bdmError = notifProto.error
+         if 'rescan' in bdmError.lower() or 'rebuild' in bdmError.lower():
+            result = MsgBoxWithDNAA(self, self, MSGBOX.Critical,
+               self.tr('BDM error!'), bdmError,
                self.tr("Rebuild and rescan on next start"), dnaaStartChk=False)
             if result[1] == True:
                touchFile( os.path.join(ARMORY_HOME_DIR, 'rebuild.flag') )
 
-         elif 'factory reset' in args.lower():
-            result = MsgBoxWithDNAA(self, self, MSGBOX.Critical, self.tr('BDM error!'), args,
+         elif 'factory reset' in bdmError.lower():
+            result = MsgBoxWithDNAA(self, self, MSGBOX.Critical,
+               self.tr('BDM error!'), bdmError,
                self.tr("Factory reset on next start"), dnaaStartChk=False)
             if result[1] == True:
                DlgFactoryReset(self, self).exec_()
 
          else:
             QtWidgets.QMessageBox.critical(self, self.tr('BlockDataManager Warning'),
-               args, QtWidgets.QMessageBox.Ok)
+               bdmError, QtWidgets.QMessageBox.Ok)
 
          #this is a critical error reporting channel, should kill the app right
          #after
          os._exit(0)
 
-      elif action == SCAN_ACTION:
-         idList, prog, phase = args
+      elif which == 'scanProgress':
+         idList = notifProto.scanProgress.ids
+         prog = notifProto.scanProgress.progress
+         phase = notifProto.scanProgress.phase
          hasWallet = False
          hasLockbox = False
+
+         if not idList:
+            #no explicit scan ids, this is a BDM scan notif
+            self.setDashboardDetails()
+            self.updateSyncProgress()
+            return
 
          for progId in idList:
             self.walletSideScanProgress[progId] = prog*100
@@ -4572,11 +4582,11 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
                self.lbDialog.resetLBSelection()
                self.lbDialog.changeLBFilter()
 
-      elif action == NODESTATUS_UPDATE:
+      elif which == 'nodeStatus':
          prevStatus = None
          if self.nodeStatus is not None:
             prevStatus = self.nodeStatus.node
-         self.nodeStatus = args
+         self.nodeStatus = notifProto.nodeStatus
 
          if prevStatus != self.nodeStatus.node:
             if self.nodeStatus.node == 'offline':
@@ -4594,31 +4604,14 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             self.updateStatusBarText()
          self.updateSyncProgress()
 
-      elif action == BDM_SCAN_PROGRESS:
-         self.setDashboardDetails()
-         self.updateSyncProgress()
-
-      elif action == BDV_ERROR:
-         QtWidgets.QMessageBox.warning(self, self.tr('Error'), self.tr(
-            f"ArmoryDB pushed the following error:\n\n\"{args}\""),
-         QtWidgets.QMessageBox.Ok)
-
-         '''
-         errorStruct = args
-         if errorStruct.errType_ == Cpp.Error_ZC:
-            errorMsg = errorStruct.errorStr_
-            txHash = errorStruct.extraMsg_
-            self.zcBroadcastError(txHash, errorMsg)
-         '''
-
-      elif action == BDV_DISCONNECTED:
+      elif which == 'disconnected':
          self.setDashboardDetails()
          self.updateStatusBarText()
 
       #setup notifs
-      elif action == INIT_DB_CONNECTED:
+      elif which == 'setupDone':
          self.registerWalletsWithService()
-      elif action == INIT_WALLETS_REGISTERED:
+      elif which == 'registerDone':
          self.finalizeBlockchainSetup()
 
    #############################################################################
@@ -4822,7 +4815,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
          automationDlg = DlgAutomations(self, self, False)
          TheBridge.dbSetup.cleanup(
-            automationDlg.callbackId,
+            automationDlg.promptId,
             completeCloseForReal)
 
       except Exception as e:

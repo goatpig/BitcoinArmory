@@ -6,7 +6,7 @@
 #                                                                            #
 ##############################################################################
 
-from armoryengine.CppBridge import ServerPush, TheBridge
+from armoryengine.CppBridge import BridgePrompt, TheBridge
 from armoryengine.ArmoryUtils import unixTimeToFormatStr
 from ui.QtExecuteSignal import TheSignalExecution
 from ui.Wizards import SetPassphrasePage, VerifyPassphrasePage, \
@@ -44,10 +44,10 @@ class DlgUnlockMigratingWallet(DlgUnlockWallet):
          self.reject()
 
 ################################################################################
-class DlgWalletMigration(ArmoryDialog, ServerPush):
+class DlgWalletMigration(ArmoryDialog, BridgePrompt):
    """Dialog for migrating a legacy wallet to the new format."""
    def __init__(self, parent, main, wltPath, walletData):
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       ArmoryDialog.__init__(self, parent, main)
 
       self.initMemberVariables(wltPath, walletData)
@@ -532,7 +532,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
    def proceedWithMigration(self):
       """
       Ask bridge to migrate the wallet, notifications will be sent
-      to overloaded parseProtoPacket (from ServerPush parent class)
+      to overloaded parseProtoPacket (from BridgePrompt parent class)
       """
       # Mark migration as started
       self.migrationStarted = True
@@ -545,7 +545,7 @@ class DlgWalletMigration(ArmoryDialog, ServerPush):
 
       TheBridge.wltManager.migrateWallet(
          self.walletPath,
-         self.callbackId, wrapperFunc)
+         self.promptId, wrapperFunc)
 
    ####
    def reject(self):

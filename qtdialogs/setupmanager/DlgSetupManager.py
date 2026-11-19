@@ -13,7 +13,7 @@ from armoryengine.ArmoryUtils import CLI_OPTIONS, \
    ARMORY_HOME_DIR, ARMORYDB_DEFAULT_PORT, \
    LOGINFO, LOGERROR
 from armoryengine.Settings import TheSettings
-from armoryengine.CppBridge import TheBridge, ServerPush, \
+from armoryengine.CppBridge import TheBridge, BridgePrompt, \
    PeersDbCallback, ServerKeyCallback
 from ui.QtExecuteSignal import TheSignalExecution
 
@@ -540,7 +540,7 @@ class DlgSetupManager(ArmoryDialog):
 
       dlgAutomations = DlgAutomations(self, self.main, automateNode)
       TheBridge.dbSetup.runAutomationContext(
-         dlgAutomations.callbackId,
+         dlgAutomations.promptId,
          self._handleAutomationReply)
       dlgAutomations.exec_()
 
@@ -585,7 +585,7 @@ class DlgSetupManager(ArmoryDialog):
 
       LOGINFO(f"Calling connectToIp: {dbAddr}:{dbPort}")
 
-      callbackId = f"connectToIp_{dbAddr}_{dbPort}"
+      promptId = f"connectToIp_{dbAddr}_{dbPort}"
       self.pendingConnectionResult = None
 
       def onConnectResult(reply):
@@ -598,12 +598,12 @@ class DlgSetupManager(ArmoryDialog):
          self._ipConnectDone.emit()
 
       self.serverKeyCallback = ServerKeyCallback(
-         callbackId=callbackId,
+         promptId=promptId,
          onPresentPubkey=self._onServerKeyPresented)
 
       TheBridge.dbSetup.connectToIp(
          ip=dbAddr, port=dbPort,
-         callbackId=callbackId,
+         promptId=promptId,
          resultCallback=onConnectResult)
 
       LOGINFO("connectToIp initiated, waiting for key")
@@ -670,10 +670,10 @@ class DlgSetupManager(ArmoryDialog):
          return True
 
       LOGINFO("Loading peers database...")
-      callbackId = "loadPeersDb_setup"
+      promptId = "loadPeersDb_setup"
 
       self.peersDbCallback = PeersDbCallback(
-         callbackId=callbackId,
+         promptId=promptId,
          onUnlockRequest=\
             self._onPeersDbUnlockRequest,
          onSetPassphrase=\
@@ -696,7 +696,7 @@ class DlgSetupManager(ArmoryDialog):
                   .setCurrentIndex, 0)
 
       TheBridge.dbSetup.loadPeersDb(
-         callbackId,
+         promptId,
          resultCallback=onLoadResult)
       return True
 
@@ -792,14 +792,14 @@ class DlgSetupManager(ArmoryDialog):
          promptOnQtThread)
 
 ################################################################################
-class DlgAutomations(ArmoryDialog, ServerPush):
+class DlgAutomations(ArmoryDialog, BridgePrompt):
    """
    Modal to render automation notifications.
    See runAutomationContext and cleanup in class DbSetupService
    """
    def __init__(self, parent, main, withNode: bool):
       ArmoryDialog.__init__(self, parent, main)
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
 
       #setup modal
       layout = QtWidgets.QVBoxLayout()
@@ -818,12 +818,12 @@ class DlgAutomations(ArmoryDialog, ServerPush):
       self.progressLabel.setText(self.progressDesc)
       self.setVisible(True)
 
-   def parseProtoPacket(self, protoPacket):
-      """override of ServerPush method"""
-      which = protoPacket.which()
+   def parseProtoPacket(self, prompt):
+      """override of BridgePrompt method"""
+      which = prompt.which()
       if which == "cleanup":
          TheSignalExecution.executeMethod(self.reject)
 
       elif which == "automation":
          TheSignalExecution.executeMethod(
-            self.updateLabel, protoPacket.automation.which())
+            self.updateLabel, prompt.automation)

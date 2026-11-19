@@ -1621,7 +1621,7 @@ void CppBridge::connectToIp(
       return;
    }
 
-   auto presentServerKeyCallback = [promptId=command.callbackId, this]
+   auto presentServerKeyCallback = [promptId=command.promptId, this]
    (const BinaryData& key)->bool
    {
       auto counterBd = fortuna.generateRandom(4);

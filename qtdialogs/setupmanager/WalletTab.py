@@ -263,7 +263,7 @@ class WalletTab(QtWidgets.QWidget):
 
          TheBridge.wltManager.unlockControlHeader(
             walletEntry.filename,
-            unlockDlg.callbackId,
+            unlockDlg.promptId,
             lambda x: TheSignalExecution.executeMethod(handleUnlockResult, x)
          )
          unlockDlg.show()

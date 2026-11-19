@@ -1,16 +1,23 @@
 ################################################################################
 #                                                                              #
-# Copyright (C) 2011-2025, Armory Technologies, Inc.                           #
+# Copyright (C) 2011-2015, Armory Technologies, Inc.                           #
 # Distributed under the GNU Affero General Public License (AGPL v3)            #
 # See LICENSE or http://www.gnu.org/licenses/agpl.html                         #
+#                                                                              #
+# Copyright (C) 2016-2026, goatpig                                             #
+#  Distributed under the MIT license                                           #
+#  See LICENSE-MIT or https://opensource.org/licenses/MIT                      #
 #                                                                              #
 ################################################################################
 import os.path
 
 #TODO: import * is too aggressive
-from armoryengine.ArmoryUtils import *
+#from armoryengine.ArmoryUtils import *
 from armoryengine.Timer import TimeThisFunction
-from armoryengine.CppBridge import ServerPush, TheBridge
+from armoryengine.CppBridge import TheBridge
+from armoryengine.ArmoryUtils import CLI_OPTIONS, LOGINFO, LOGERROR, \
+   LOGEXCEPT, BTC_HOME_DIR, ARMORY_DB_DIR, ARMORY_HOME_DIR, ARMORYDB_IP , \
+   ARMORYDB_DEFAULT_IP
 
 BDMPhase_DBHeaders = 1
 BDMPhase_OrganizingChain = 2
@@ -22,39 +29,10 @@ BDMPhase_SearchHashes = 7
 BDMPhase_ResolveHashes = 8
 BDMPhase_Completed = 9
 
-
 BDM_OFFLINE = 'Offline'
 BDM_UNINITIALIZED = 'Uninitialized'
 BDM_BLOCKCHAIN_READY = 'BlockChainReady'
 BDM_SCANNING = 'Scanning'
-
-NEW_ZC_ACTION = 'zeroConfs'
-NEW_BLOCK_ACTION = 'newBlock'
-REFRESH_ACTION = 'refresh'
-STOPPED_ACTION = 'stopped'
-WARNING_ACTION = 'warning'
-SCAN_ACTION = 'StartedWalletScan'
-NODESTATUS_UPDATE = 'nodeStatus'
-BDM_SCAN_PROGRESS = 'BDM_Progress'
-BDV_ERROR = 'error'
-BDV_DISCONNECTED = 'disconnected'
-
-CPP_BDM_NOTIF_ID      = "bdm_callback"
-CPP_PROGRESS_NOTIF_ID = "progress"
-
-INIT_DB_CONNECTED = 'setupDone'
-INIT_WALLETS_REGISTERED = 'registerDone'
-INIT_DB_READY = 'ready'
-
-def newTheBDM(isOffline=False):
-   global TheBDM
-   if TheBDM:
-      TheBDM.beginCleanShutdown()
-   TheBDM = BlockDataManager(isOffline=isOffline)
-
-def getCurrTimeAndBlock():
-   time0 = long(RightNowUTC())
-   return (time0, TheBDM.getTopBlockHeight())
 
 # Make TheBDM act like it's a singleton. Always use the global singleton TheBDM
 # instance that exists in this module regardless of the instance that passed as self
@@ -66,15 +44,6 @@ def ActLikeASingletonBDM(func):
       else:
          return func(*args, **kwargs)
    return inner
-
-################################################################################
-class BDMCallbackWrapper(ServerPush):
-   def __init__(self, callbackId, callbackFunc):
-      super().__init__(callbackId)
-      self.callbackFunc = callbackFunc
-
-   def parseProtoPacket(self, protoPacket):
-      self.callbackFunc(protoPacket)
 
 ################################################################################
 class BlockDataManager(object):
@@ -120,35 +89,24 @@ class BlockDataManager(object):
 
    #############################################################################
    @ActLikeASingletonBDM
-   def getListenerList(self):
-      return self.cppNotificationListenerList
-
-   #############################################################################
-   @ActLikeASingletonBDM
    def getTopBlockHeight(self):
       return self.topBlockHeight
 
    #############################################################################
    @ActLikeASingletonBDM
-   def registerCppNotification(self, cppNotificationListener):
-      self.cppNotificationListenerList.append(cppNotificationListener)
-
-   #############################################################################
-   @ActLikeASingletonBDM
-   def registerPrompt(self, prompt):
-      wrapper = BDMCallbackWrapper(None, prompt)
-      return wrapper.callbackId
+   def registerCppNotification(self, listener):
+      self.cppNotificationListenerList.append(listener)
 
    #############################################################################
    @ActLikeASingletonBDM
    def unregisterPrompt(self, id):
-      TheBridge.bridgeSocket.unsetCallback(id)
+      TheBridge.bridgeSocket.clearPrompt(id)
 
    #############################################################################
    @ActLikeASingletonBDM
-   def unregisterCppNotification(self, cppNotificationListener):
-      if cppNotificationListener in self.cppNotificationListenerList:
-         self.cppNotificationListenerList.remove(cppNotificationListener)
+   def unregisterCppNotification(self, listener):
+      if listener in self.cppNotificationListenerList:
+         self.cppNotificationListenerList.remove(listener)
 
    #############################################################################
    @ActLikeASingletonBDM
@@ -182,65 +140,26 @@ class BlockDataManager(object):
       return self.bdmState
 
    #############################################################################
-   @ActLikeASingletonBDM
-   def RegisterEventForSignal(self, func, signal):
-      def bdmCallback(bdmSignal, args):
-         if bdmSignal == signal:
-            func(args)
-      self.registerCppNotification(bdmCallback)
-
-   #############################################################################
    def pushNotification(self, notifProto):
-      act = notifProto.which()
-
-      if act == INIT_DB_READY:
+      which = notifProto.which()
+      if which == 'ready':
          LOGINFO('BDM is ready!')
          TheBDM.topBlockHeight = notifProto.ready
          TheBDM.setState(BDM_BLOCKCHAIN_READY)
 
-      elif act == NEW_BLOCK_ACTION:
+      elif which == 'newBlock':
          TheBDM.topBlockHeight = notifProto.newBlock
 
-      elif act == BDV_DISCONNECTED:
+      elif which == 'disconnected':
          TheBDM.setState(BDM_OFFLINE)
 
-      listenerList = self.getListenerList()
-      for cppNotificationListener in listenerList:
-         cppNotificationListener(act, getattr(notifProto, act))
+      for listener in self.cppNotificationListenerList:
+         listener(notifProto)
 
    #############################################################################
-   def reportProgress(self, notifProto):
-      phase = notifProto.scanProgress.phase
-      prog = notifProto.scanProgress.progress
-      seconds = notifProto.scanProgress.time
-      progressNumeric = notifProto.scanProgress.numericProgress
-      walletVec = notifProto.scanProgress.ids
-
-      try:
-         if len(walletVec) == 0:
-            self.progressPhase = phase
-            self.progressComplete = prog
-            self.secondsRemaining = seconds
-            self.progressNumeric = progressNumeric
-
-            self.bdmState = BDM_SCANNING
-
-            for cppNotificationListener in self.getListenerList():
-               cppNotificationListener(BDM_SCAN_PROGRESS, (None, None))
-         else:
-            progInfo = (walletVec, prog, phase)
-            for cppNotificationListener in self.getListenerList():
-               cppNotificationListener(SCAN_ACTION, progInfo)
-
-      except:
-         LOGEXCEPT('Error in running progress callback')
-         print(sys.exc_info())
-
-   #############################################################################
-   def startBridge(self, stringArgs, notifyReadyLbd):
-      BDMCallbackWrapper(CPP_BDM_NOTIF_ID, self.pushNotification)
-      BDMCallbackWrapper(CPP_PROGRESS_NOTIF_ID, self.reportProgress)
-      TheBridge.start(stringArgs, notifyReadyLbd)
+   def startBridge(self, stringArgs, readyCallback):
+      TheBridge.bridgeSocket.setNotificationHandler(self.pushNotification)
+      TheBridge.start(stringArgs, readyCallback)
 
 ################################################################################
 # Make TheBDM reference the asyncrhonous BlockDataManager wrapper if we are

@@ -116,7 +116,7 @@ namespace Armory
             {
                const std::string ip;
                const uint16_t port;
-               const std::string callbackId;
+               const std::string promptId;
                const uint64_t msgId;
 
                Command_ConnectToIp(const std::string&, uint16_t,

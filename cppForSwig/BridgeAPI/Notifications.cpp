@@ -267,7 +267,7 @@ Push::Command_ConnectToIp::Command_ConnectToIp(
    const std::string& IP, uint16_t PORT,
    const std::string& cbid, uint64_t msgid) :
    Payload{PayloadType::CONNECT_TO_IP, {}},
-   ip{IP}, port{PORT}, callbackId{cbid}, msgId{msgid}
+   ip{IP}, port{PORT}, promptId{cbid}, msgId{msgid}
 {}
 
 Push::Command_ConnectToPeer::Command_ConnectToPeer(

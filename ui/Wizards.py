@@ -21,7 +21,7 @@ from ui.TxFramesOffline import SignBroadcastOfflineTxFrame
 from ui.QtExecuteSignal import TheSignalExecution
 from armoryengine.PyBtcWallet import PyBtcWallet
 from armoryengine.BDM import TheBDM, BDM_OFFLINE, BDM_UNINITIALIZED
-from armoryengine.CppBridge import ServerPush
+from armoryengine.CppBridge import BridgePrompt
 
 from qtdialogs.qtdefines import AddToRunningDialogsList, \
    USERMODE, GETFONT, MSGBOX
@@ -76,9 +76,9 @@ class ArmoryWizardPage(QtWidgets.QWizardPage):
       return True
 
 ################################################################################
-class CreateWalletNotifHandler(ServerPush):
+class CreateWalletNotifHandler(BridgePrompt):
    def __init__(self, page):
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       self.wizard = page.wizard
       self.frame = page.pageFrame
 
@@ -96,7 +96,7 @@ class CreateWalletNotifHandler(ServerPush):
 
    def parseProtoPacket(self, payload):
       if payload.which() == 'cleanup':
-         TheBDM.unregisterPrompt(self.callbackId)
+         TheBDM.unregisterPrompt(self.promptId)
          self.frame.setDone()
          return
 
@@ -296,7 +296,7 @@ class WalletWizard(ArmoryWizard):
 
       handler = CreateWalletNotifHandler(self.walletProgressPage)
       PyBtcWallet().createNewWallet(
-         replyCallback=finalizeCb, callbackId=handler.callbackId,
+         replyCallback=finalizeCb, promptId=handler.promptId,
          shortLabel=self.walletCreationPage.pageFrame.getName(),
          longLabel=self.walletCreationPage.pageFrame.getDescription(),
          extraEntropy=entropy)
