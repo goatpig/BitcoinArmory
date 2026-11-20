@@ -4422,8 +4422,6 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
       elif which == 'refresh':
          refreshIds = notifProto.refresh
          for dbId in refreshIds:
-            if dbId == "wallet_filter_changed":
-               continue
             self.wallets.syncWalletData(dbId)
 
          #skip the balance update step until the bdm_ready notification
@@ -4439,19 +4437,7 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
             LOGERROR("Failed update wallet data with error: %s" % e)
             return
 
-         reset = False
-         if len(refreshIds) == 0:
-            self.createCombinedLedger()
-            return
-
          for dbId in refreshIds:
-            if not dbId:
-               continue
-
-            if dbId == "wallet_filter_changed":
-               reset = True
-               continue
-
             try:
                wlt = self.wallets.get(dbId)
                wlt.isEnabled = True
@@ -4481,8 +4467,10 @@ class ArmoryMainWindow(QtWidgets.QMainWindow):
 
             if dbId in self.walletSideScanProgress:
                del self.walletSideScanProgress[dbId]
+         self.createCombinedLedger()
 
-         self.createCombinedLedger(reset)
+      elif which == 'updateWalletFilters':
+         self.createCombinedLedger(True)
 
       elif which == 'error':
          #something went wrong on the C++ side, create a message box to report

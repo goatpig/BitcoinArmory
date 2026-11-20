@@ -259,6 +259,10 @@ SyncState Push::Command_Refresh::syncWalletState() const
    return syncWalletsWithDB;
 }
 
+Push::Command_UpdateWalletFilter::Command_UpdateWalletFilter() :
+   Payload(PayloadType::UPDATE_WALLET_FILTER, {})
+{}
+
 ////////
 Push::Command_ConnectToIp::Command_ConnectToIp(
    const std::string& IP, uint16_t PORT,
@@ -308,6 +312,15 @@ BinaryData Serialization::getRefreshPacket(
    for (const auto& id : notifPtr->refreshIds) {
       capnIds.set(i++, id);
    }
+   return serializeCapnp(message);
+}
+
+BinaryData Serialization::getUpdateWalletFiltersPacket()
+{
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto capnNotif = fromBridge.initNotification();
+   capnNotif.setUpdateWalletFilters();
    return serializeCapnp(message);
 }
 

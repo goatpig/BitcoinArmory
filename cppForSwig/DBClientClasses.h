@@ -17,8 +17,6 @@
 #include <Node/RPC.h>
 #include "Progress.h"
 
-#define FILTER_CHANGE_FLAG "wallet_filter_changed"
-
 namespace capnp {
    class MessageReader;
 }

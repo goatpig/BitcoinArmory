@@ -43,6 +43,7 @@ namespace Armory
                NEWBLOCK,
                ZC,
                REFRESH,
+               UPDATE_WALLET_FILTER,
                IS_REGISTERED,
                SETUP_DONE,
                CONNECT_TO_IP,
@@ -112,6 +113,11 @@ namespace Armory
                SyncState syncWalletState(void) const override;
             };
 
+            struct Command_UpdateWalletFilter : public Payload
+            {
+               Command_UpdateWalletFilter(void);
+            };
+
             struct Command_ConnectToIp : public Payload
             {
                const std::string ip;
@@ -178,6 +184,7 @@ namespace Armory
             //bridge client notif serialization
             BinaryData getNewBlockPacket(std::shared_ptr<Push::Notif_NewBlock>);
             BinaryData getRefreshPacket(std::shared_ptr<Push::Command_Refresh>);
+            BinaryData getUpdateWalletFiltersPacket(void);
             std::pair<BinaryData, BinaryData> getZcPacket(
                const std::vector<Ledgers::Entry>&,
                const std::set<BinaryData>&);

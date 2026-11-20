@@ -121,18 +121,19 @@ struct WalletIdentifier {
 ## Notifications
 struct Notification {
    union {
-      unset          @0 : Void;
-      ready          @1 : Types.Height;
-      setupDone      @2 : Void;
-      registerDone   @3 : Void;
-      refresh        @4 : List(Text);
-      newBlock       @5 : Types.Height;
-      disconnected   @6 : Void;
-      scanProgress   @7 : Types.ScanProgress;
-      nodeStatus     @8 : Types.NodeStatus;
-      zeroConfs      @9 : Types.TxLedger;
-      error          @10: Text;
-      invalidatedZcs @11: List(Types.Hash);
+      unset                @0 : Void;
+      ready                @1 : Types.Height;
+      setupDone            @2 : Void;
+      registerDone         @3 : Void;
+      refresh              @4 : List(Text);
+      updateWalletFilters  @5 : Void;
+      newBlock             @6 : Types.Height;
+      disconnected         @7 : Void;
+      scanProgress         @8 : Types.ScanProgress;
+      nodeStatus           @9 : Types.NodeStatus;
+      zeroConfs            @10: Types.TxLedger;
+      error                @11: Text;
+      invalidatedZcs       @12: List(Types.Hash);
    }
 }
 
