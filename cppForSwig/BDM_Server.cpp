@@ -1047,14 +1047,12 @@ void BdvClient::processNotification(
          auto notifList = notifs.initNotifs(1);
          auto notif = notifList[0];
          auto progressNotif = notif.initProgress();
-
          auto payload =
             std::dynamic_pointer_cast<BDV_Notification_Progress>(notifPtr);
 
-         progressNotif.setPhase((uint32_t)payload->phase);
-         progressNotif.setProgress(payload->progress);
-         progressNotif.setTime(payload->time);
-         progressNotif.setNumericProgress(payload->numericProgress);
+         progressNotif.setPhase((Codec::Types::ScanProgress::Phase)payload->tick.phase);
+         progressNotif.setProgress(payload->tick.progress);
+         progressNotif.setEtaSec(payload->tick.etaSec);
 
          if (payload->walletIDs.empty()) {
             break;

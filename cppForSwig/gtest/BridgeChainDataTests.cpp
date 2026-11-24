@@ -163,12 +163,7 @@ protected:
          return false;
       }
       auto notif = fromBridge.getNotification();
-      if (notif.which() != Codec::Bridge::Notification::REFRESH) {
-         return false;
-      }
-      auto notifIds = notif.getRefresh();
-      if (notifIds.size() != 1 ||
-         notifIds[0] != std::string{"wallet_filter_changed"}) {
+      if (notif.which() != Codec::Bridge::Notification::UPDATE_WALLET_FILTERS) {
          return false;
       }
       return true;
@@ -497,9 +492,9 @@ protected:
          return { {}, true };
       };
 
-      auto createWltLbd = []()->std::unique_ptr<Passphrase::Params>
+      auto createWltLbd = []()
       {
-         return std::make_unique<Passphrase::Params>(
+         return std::make_unique<Passphrase::PassAndParams>(
             1ms, 0, SecureBinaryData{});
       };
 

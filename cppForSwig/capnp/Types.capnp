@@ -13,7 +13,7 @@ using AccountId         = Text;
 using SignerId          = Text;
 using DelegateId        = Text;
 using BdvId             = UInt64;
-using CallbackId        = Text;
+using PromptId          = Text;
 using CoinSelectionId   = Text;
 
 using Height      = UInt32;
@@ -103,11 +103,19 @@ struct NodeStatus {
 }
 
 struct ScanProgress {
-   phase             @0 : UInt32;
-   progress          @1 : Float32;
-   time              @2 : UInt32;
-   numericProgress   @3 : UInt32;
-   ids               @4 : List(Text);
+   enum Phase {
+      loadHeaders       @0;
+      organizeHeaders   @1;
+      parseNewHeaders   @2;
+      parseNewBlocks    @3;
+      scanBlocks        @4;
+      completed         @5;
+   }
+
+   phase                @0 : Phase;
+   progress             @1 : Float32;
+   etaSec               @2 : UInt32;
+   ids                  @3 : List(Text);
 }
 
 struct FeeSchedule {

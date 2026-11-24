@@ -218,9 +218,10 @@ bool ServerPushHandler::parseCapnPayload(
                ids.emplace_back(capnId);
             }
 
-            auto phase = (BDMPhase)capnProgress.getPhase();
-            pushProgress(phase, ids, capnProgress.getProgress(),
-               capnProgress.getTime(), capnProgress.getNumericProgress());
+            auto phase = (BDMProgress::Phase)capnProgress.getPhase();
+            pushProgress(
+               {phase, capnProgress.getProgress(), capnProgress.getEtaSec()},
+               ids);
             break;
          }
 

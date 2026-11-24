@@ -19,10 +19,6 @@ using namespace Armory;
 using namespace Armory::Bridge;
 using namespace Armory::Bridge::Notifications;
 
-#define BRIDGE_CALLBACK_BDM         "bdm_callback"
-#define BRIDGE_CALLBACK_PROGRESS    "progress"
-#define DISCONNECTED_CALLBACK_ID    "disconnected"
-
 ////////////////////////////////////////////////////////////////////////////////
 // anon namespace
 namespace
@@ -158,25 +154,21 @@ void Push::NotifHandler::pushError(const BdvError& error) const
 
 ////////
 void Push::NotifHandler::pushProgress(
-   BDMPhase phase,
-   const std::vector<std::string> &walletIdVec,
-   float progress, unsigned secondsRem,
-   unsigned progressNumeric) const
+   const BDMProgress::Tick& tick,
+   const std::vector<std::string> &walletIdVec) const
 {
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    auto capnProgress = capnNotif.initScanProgress();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_PROGRESS);
 
-   capnProgress.setPhase((uint32_t)phase);
-   capnProgress.setProgress(progress);
-   capnProgress.setTime(secondsRem);
-   capnProgress.setNumericProgress(progressNumeric);
+   capnProgress.setPhase((Codec::Types::ScanProgress::Phase)tick.phase);
+   capnProgress.setProgress(tick.progress);
+   capnProgress.setEtaSec(tick.etaSec);
 
    if (!walletIdVec.empty()) {
       auto capnIds = capnProgress.initIds(walletIdVec.size());
-      for (unsigned i=0; i<walletIdVec.size(); i++) {
+      for (unsigned i = 0; i < walletIdVec.size(); i++) {
          capnIds.set(i, walletIdVec[i]);
       }
    }
@@ -267,12 +259,16 @@ SyncState Push::Command_Refresh::syncWalletState() const
    return syncWalletsWithDB;
 }
 
+Push::Command_UpdateWalletFilter::Command_UpdateWalletFilter() :
+   Payload(PayloadType::UPDATE_WALLET_FILTER, {})
+{}
+
 ////////
 Push::Command_ConnectToIp::Command_ConnectToIp(
    const std::string& IP, uint16_t PORT,
    const std::string& cbid, uint64_t msgid) :
    Payload{PayloadType::CONNECT_TO_IP, {}},
-   ip{IP}, port{PORT}, callbackId{cbid}, msgId{msgid}
+   ip{IP}, port{PORT}, promptId{cbid}, msgId{msgid}
 {}
 
 Push::Command_ConnectToPeer::Command_ConnectToPeer(
@@ -301,7 +297,6 @@ BinaryData Serialization::getNewBlockPacket(
    } else {
       capnNotif.setNewBlock(notifPtr->blockNotif.getHeight());
    }
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -311,13 +306,21 @@ BinaryData Serialization::getRefreshPacket(
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnIds = capnNotif.initRefresh(notifPtr->refreshIds.size());
    unsigned i=0;
    for (const auto& id : notifPtr->refreshIds) {
       capnIds.set(i++, id);
    }
+   return serializeCapnp(message);
+}
+
+BinaryData Serialization::getUpdateWalletFiltersPacket()
+{
+   capnp::MallocMessageBuilder message;
+   auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
+   auto capnNotif = fromBridge.initNotification();
+   capnNotif.setUpdateWalletFilters();
    return serializeCapnp(message);
 }
 
@@ -330,7 +333,6 @@ std::pair<BinaryData, BinaryData> Serialization::getZcPacket(
    capnp::MallocMessageBuilder messageLedgers;
    auto fromBridge = messageLedgers.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto capnZCs = capnNotif.initZeroConfs();
    ledgersToCapnp(zcLedgers, capnZCs);
@@ -344,7 +346,6 @@ std::pair<BinaryData, BinaryData> Serialization::getZcPacket(
    capnp::MallocMessageBuilder messageIZC;
    fromBridge = messageIZC.initRoot<Codec::Bridge::FromBridge>();
    capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
 
    auto zcHashes = capnNotif.initInvalidatedZcs(
       invalidatedZCs.size());
@@ -364,7 +365,6 @@ BinaryData Serialization::getSetupDonePacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setSetupDone();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -374,7 +374,6 @@ BinaryData Serialization::getWalletsRegisteredPacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setRegisterDone();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -384,7 +383,6 @@ BinaryData Serialization::getServerDisconnectedPacket()
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
    capnNotif.setDisconnected();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    return serializeCapnp(message);
 }
 
@@ -393,7 +391,6 @@ BinaryData Serialization::getNodeStatusPacket(const Node::Status& nodeStatus)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    auto capnNode = capnNotif.initNodeStatus();
    nodeStatusToCapnp(nodeStatus, capnNode);
    return serializeCapnp(message);
@@ -404,7 +401,6 @@ BinaryData Serialization::getErrorPacket(const BdvError& error)
    capnp::MallocMessageBuilder message;
    auto fromBridge = message.initRoot<Codec::Bridge::FromBridge>();
    auto capnNotif = fromBridge.initNotification();
-   capnNotif.setCallbackId(BRIDGE_CALLBACK_BDM);
    capnNotif.setError(error.errorStr);
    return serializeCapnp(message);
 }

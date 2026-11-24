@@ -129,21 +129,22 @@ class BridgeSocket(object):
    def __init__(self):
       self.idCounter = 0
       self.responseDict = {}
-      self.callbackDict = {}
+      self.promptDict = {}
       self.bip15xConnection = BIP15xConnection(self.sendToBridgeRaw)
       self.run = False
       self.rwLock = None
+      self._notificationHandler = None
 
       import random
       self.port = random.randint(50000, 60000)
 
    ####
-   def setCallback(self, key, callback):
-      self.callbackDict[key] = callback
+   def setPrompt(self, key, prompt):
+      self.promptDict[key] = prompt
 
-   def unsetCallback(self, key):
-      if key in self.callbackDict:
-         del self.callbackDict[key]
+   def clearPrompt(self, key):
+      if key in self.promptDict:
+         del self.promptDict[key]
 
    #############################################################################
    ## listen socket setup
@@ -380,21 +381,28 @@ class BridgeSocket(object):
                else:
                   LOGWARN(f"unexpected callback type: {type(replyHandler)}")
 
-            elif protoPayload.which() == "notification":
-               callbackData = protoPayload.notification
-               callbackId = callbackData.callbackId
+            elif protoPayload.which() == "prompt":
+               promptData = protoPayload.prompt
+               promptId = promptData.id
 
-               #find the callback listener
+               #find the prompt listener
                self.rwLock.acquire(True)
-               if callbackId not in self.callbackDict:
-                  LOGWARN(f"ignoring callback id: {callbackId}")
+               if promptId not in self.promptDict:
+                  LOGWARN(f"ignoring promptId: {promptId}")
                   self.rwLock.release()
                   continue
 
                #call it with the payload
-               callbackFunc = self.callbackDict[callbackId]
+               promptFunc = self.promptDict[promptId]
                self.rwLock.release()
-               callbackFunc.process(callbackData)
+               promptFunc.process(promptData)
+
+            elif protoPayload.which() == "notification":
+               if self._notificationHandler != None:
+                  self._notificationHandler(protoPayload.notification)
+
+   def setNotificationHandler(self, handler):
+      self._notificationHandler = handler 
 
 ################################################################################
 ##
@@ -425,7 +433,7 @@ class DbSetupService(ProtoWrapper):
    #############################################################################
    ## commands ##
    def connectToIp(self,
-      ip: str, port: int, callbackId: str,
+      ip: str, port: int, promptId: str,
       resultCallback: callable = None):
       """
       Connect to remote DB by IP address (1-way auth).
@@ -437,7 +445,7 @@ class DbSetupService(ProtoWrapper):
       Args:
          ip: Remote DB IP address
          port: Remote DB port
-         callbackId: Callback ID for receiving server key
+         promptId: Callback ID for receiving server key
          resultCallback: Called with the reply when connection
             completes or fails (after key ack/nack)
       """
@@ -445,7 +453,7 @@ class DbSetupService(ProtoWrapper):
       request = packet.init("setup").init("connectToIp")
       request.ip = ip
       request.port = port
-      request.callbackId = callbackId
+      request.promptId = promptId
       self.send(packet, needsReply=False, callback=resultCallback)
 
    ####
@@ -466,7 +474,7 @@ class DbSetupService(ProtoWrapper):
 
    ####
    def loadPeersDb(self,
-      callbackId: str,
+      promptId: str,
       resultCallback: callable = None):
       """
       Load the peers database.
@@ -476,7 +484,7 @@ class DbSetupService(ProtoWrapper):
       - setPassphrase: If container doesn't exist, needs new passphrase
 
       Args:
-         callbackId: Callback ID for receiving unlock/passphrase
+         promptId: Prompt ID for receiving unlock/passphrase
          resultCallback: If provided, call is non-blocking and the
             callback fires with the reply when the load completes.
             Must be non-blocking when called from the Qt thread,
@@ -484,7 +492,7 @@ class DbSetupService(ProtoWrapper):
             Qt event loop.
       """
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").init("peersHelper").loadPeersDb = callbackId
+      packet.init("setup").init("peersHelper").loadPeersDb = promptId
       if resultCallback:
          self.send(packet, needsReply=False,
             callback=resultCallback)
@@ -595,16 +603,16 @@ class DbSetupService(ProtoWrapper):
       fut = self.send(packet)
       return fut.getVal(nothrow=True)
 
-   def runAutomationContext(self, callbackId: str, successCb: callable):
+   def runAutomationContext(self, promptId: str, successCb: callable):
       """run the automation context setup via initAutomationContext"""
       packet = Bridge.ToBridge.new_message()
-      request = packet.init("setup").runAutomationContext = callbackId
+      request = packet.init("setup").runAutomationContext = promptId
       self.send(packet, callback=successCb)
 
-   def cleanup(self, callbackId: str, successCb: callable):
+   def cleanup(self, promptId: str, successCb: callable):
       """cleanup automation context."""
       packet = Bridge.ToBridge.new_message()
-      packet.init("setup").cleanupAutomationContext = callbackId
+      packet.init("setup").cleanupAutomationContext = promptId
       if successCb:
          self.send(packet, callback=successCb)
       else:
@@ -762,11 +770,11 @@ class BlockchainUtils(ProtoWrapper):
    #############################################################################
    def createWallet(self, addrPoolSize: int,
       shortLabel: str, longLabel: str, extraEntropy: bytes,
-      callbackId: str, successCb: callable):
+      promptId: str, successCb: callable):
       packet = Bridge.ToBridge.new_message()
 
       method = packet.init("utils").init("createWallet")
-      method.callbackId = callbackId
+      method.promptId = promptId
       method.lookup = addrPoolSize
       method.label = shortLabel
       method.description = longLabel
@@ -776,9 +784,9 @@ class BlockchainUtils(ProtoWrapper):
 
    #############################################################################
    def restoreWallet(self, root: list[str], chaincode: list[str], spPass: str,
-      callbackId: str, successCb: callable):
+      promptId: str, successCb: callable):
       restoreStruct = Bridge.UtilsRequest.RestoreWalletStruct.new_message()
-      restoreStruct.callbackId = callbackId
+      restoreStruct.promptId = promptId
 
       #root
       if len(root) > 0:
@@ -850,11 +858,11 @@ class WalletManagerWrapper(ProtoWrapper):
       return reply
 
    ####
-   def migrateWallet(self, walletPath: str, callbackId: str, callbackFunc: callable):
+   def migrateWallet(self, walletPath: str, promptId: str, callbackFunc: callable):
       packet = Bridge.ToBridge.new_message()
       request = packet.init("walletManager").init("migrateWallet")
       request.walletPath = walletPath
-      request.callbackId = callbackId
+      request.promptId = promptId
       self.send(packet, callback=callbackFunc)
 
    ####
@@ -869,12 +877,12 @@ class WalletManagerWrapper(ProtoWrapper):
 
    ####
    def unlockControlHeader(self,
-      walletPath: str, callbackId: str, callbackFunc: callable):
+      walletPath: str, promptId: str, callbackFunc: callable):
       """Unlock wallet using proper unlock control header pattern."""
       packet = Bridge.ToBridge.new_message()
       request = packet.init("walletManager").init("unlockControlHeader")
       request.walletPath = walletPath
-      request.callbackId = callbackId
+      request.promptId = promptId
       self.send(packet, callback=callbackFunc)
 
    ####
@@ -979,7 +987,7 @@ class BridgeWalletWrapper(ProtoWrapper):
       method = packet.wallet.init("extendAddressPool")
       method.count = count
       method.isNew = isNew
-      method.callbackId = progressId
+      method.promptId = progressId
       self.send(packet, callback=callback)
 
    ####
@@ -988,7 +996,7 @@ class BridgeWalletWrapper(ProtoWrapper):
       packet = self._getPacket()
       req = packet.wallet.init("createBackupString")
       if serverPushObj:
-         req.private = serverPushObj.callbackId
+         req.private = serverPushObj.promptId
       else:
          req.public = None
       self.send(packet, callback=callbackFunc)
@@ -1115,10 +1123,10 @@ class BridgeWalletWrapper(ProtoWrapper):
 
    ####
    def changePassphrase(self, isPriv: bool,
-      callbackId: str, callback: callable):
+      promptId: str, callback: callable):
       packet = self._getPacket()
       changeRequest = packet.wallet.init('changePassphrase')
-      changeRequest.callbackId = callbackId
+      changeRequest.promptId = promptId
       if isPriv:
          changeRequest.private = None
       else:
@@ -1142,7 +1150,7 @@ class BridgeWalletWrapper(ProtoWrapper):
       if publicOnly:
          exportReq.publicDataOnly = None
       else:
-         exportReq.withPrivateKeys = unlockHandler.callbackId
+         exportReq.withPrivateKeys = unlockHandler.promptId
       self.send(packet, callback=callback)
 
    ####
@@ -1545,7 +1553,7 @@ class BridgeSigner(ProtoWrapper):
       packet = self._getPacket()
       method = packet.signer.init("signTx")
       method.walletId = wltId
-      method.callbackId = serverPushObj.callbackId
+      method.promptId = serverPushObj.promptId
       self.send(packet, callback=callbackFunc, cbArgs=callbackArgs)
 
    #############################################################################
@@ -1647,42 +1655,42 @@ class CallbackWrapper(object):
       callbackThread.start()
 
 ################################################################################
-class ServerPush(ProtoWrapper):
-   def __init__(self, callbackId=None):
+class BridgePrompt(ProtoWrapper):
+   def __init__(self, promptId=None):
       super().__init__(TheBridge.bridgeSocket)
 
-      if not callbackId:
-         self.callbackId = base64.b16encode(os.urandom(10)).decode('utf-8')
+      if not promptId:
+         self.promptId = base64.b16encode(os.urandom(10)).decode('utf-8')
       else:
-         self.callbackId = callbackId
-      self.bridgeSocket.setCallback(self.callbackId, self)
+         self.promptId = promptId
+      self.bridgeSocket.setPrompt(self.promptId, self)
 
-      self.refId = 0
+      self.replyId = 0
       self.packet = None
 
    def __del__(self):
-      self.bridgeSocket.unsetCallback(self.callbackId)
+      self.bridgeSocket.clearPrompt(self.promptId)
 
    def parseProtoPacket(self, protoPacket):
       raise Exception("override me")
 
    def process(self, protoPacket):
-      self.refId = protoPacket.counter
+      self.replyId = protoPacket.replyId
       self.parseProtoPacket(protoPacket)
 
    def getNewPacket(self):
       self.packet = Bridge.ToBridge.new_message()
-      notif = self.packet.init('notification')
-      notif.counter = self.refId
-      self.refId = 0
-      return self.packet.notification
+      promptReply = self.packet.init('prompt')
+      promptReply.replyId = self.replyId
+      self.replyId = 0
+      return self.packet.prompt
 
    def reply(self):
       self.send(self.packet, needsReply=False)
       self.packet = None
 
 ################################################################################
-class PeersDbCallback(ServerPush):
+class PeersDbCallback(BridgePrompt):
    """
    Callback handler for loadPeersDb operations.
 
@@ -1690,9 +1698,9 @@ class PeersDbCallback(ServerPush):
    - unlockRequest: Peers DB is encrypted, needs passphrase
    - setPassphrase: New container being created, needs passphrase setup
    """
-   def __init__(self, callbackId: str, onUnlockRequest: callable,
+   def __init__(self, promptId: str, onUnlockRequest: callable,
       onSetPassphrase: callable, onSuccess: callable):
-      super().__init__(callbackId)
+      super().__init__(promptId)
       self.onUnlockRequest = onUnlockRequest
       self.onSetPassphrase = onSetPassphrase
       self.onSuccess = onSuccess
@@ -1715,18 +1723,18 @@ class PeersDbCallback(ServerPush):
 
    def replyUnlock(self, passphrase: str, success: bool = True):
       """Reply to an unlockRequest with the passphrase."""
-      notif = self.getNewPacket()
-      notif.success = success
-      notif.unlockRequest = passphrase
+      promptReply = self.getNewPacket()
+      promptReply.success = success
+      promptReply.unlockRequest = passphrase
       self.reply()
 
    def replySetPassphrase(self,
       passphrase: str, kdfTargetMs: int = 0,
       kdfTargetMB: int = 0, reuseKdf: bool = False,
       success: bool = True):
-      notif = self.getNewPacket()
-      notif.success = success
-      reply = notif.init("setPassphrase")
+      promptReply = self.getNewPacket()
+      promptReply.success = success
+      reply = promptReply.init("setPassphrase")
       reply.passphrase = passphrase
       if reuseKdf:
          reply.reuseKdf = True
@@ -1737,15 +1745,15 @@ class PeersDbCallback(ServerPush):
       self.reply()
 
 ################################################################################
-class ServerKeyCallback(ServerPush):
+class ServerKeyCallback(BridgePrompt):
    """
    Callback handler for connectToIp server key presentation.
 
    Handles:
    - presentPubkey: Server presenting its public key for user approval
    """
-   def __init__(self, callbackId: str, onPresentPubkey: callable):
-      super().__init__(callbackId)
+   def __init__(self, promptId: str, onPresentPubkey: callable):
+      super().__init__(promptId)
       self.onPresentPubkey = onPresentPubkey
 
    def parseProtoPacket(self, protoPacket):
@@ -1757,9 +1765,9 @@ class ServerKeyCallback(ServerPush):
 
    def replyAck(self, accept: bool = True):
       """Reply to server key presentation (ack/nack)."""
-      notif = self.getNewPacket()
-      notif.success = accept
-      notif.presentPubkey = None
+      promptReply = self.getNewPacket()
+      promptReply.success = accept
+      promptReply.presentPubkey = None
       self.reply()
 
 ####

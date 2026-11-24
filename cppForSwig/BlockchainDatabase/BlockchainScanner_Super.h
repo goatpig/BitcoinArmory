@@ -12,7 +12,6 @@
 #include <Utils/ThreadSafeClasses.h>
 #include <Utils/BinaryData.h>
 #include "Progress.h"
-#include "bdmenums.h"
 #include "BlockObj.h"
 
 #include <future>
@@ -188,7 +187,7 @@ private:
    const unsigned totalBlockFileCount_;
    Armory::Hash32 topScannedBlockHash_;
 
-   ProgressCallback progress_ = nullptr;
+   Armory::BDMProgress::ReportFunc progress_ = nullptr;
    bool reportProgress_ = false;
    std::atomic<unsigned> completedBatches_;
    std::atomic<uint64_t> addrPrefixCounter_;
@@ -222,7 +221,7 @@ public:
       std::shared_ptr<Armory::Blockchain>, LMDBBlockDatabase*,
       std::shared_ptr<BlockFiles>, bool init,
       unsigned threadcount, unsigned,
-      ProgressCallback prg, bool reportProgress);
+      Armory::BDMProgress::ReportFunc prg, bool reportProgress);
 
    void scan(void);
    void scanSpentness(void);

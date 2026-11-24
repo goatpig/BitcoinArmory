@@ -11,7 +11,7 @@
 ##############################################################################
 
 from ui.QtExecuteSignal import TheSignalExecution
-from armoryengine.CppBridge import ServerPush
+from armoryengine.CppBridge import BridgePrompt
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
 from armoryengine.Settings import TheSettings
@@ -324,13 +324,13 @@ class DlgUnlockWallet(ArmoryDialog):
       self.btnAccept.setEnabled(len(self.edtPasswd.text()) >= 4)
 
 ################################################################################
-class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
+class UnlockWalletHandler(BridgePrompt, DlgUnlockWallet):
    '''
    Wraps around DlgUnlockWallet to handle CppBridge notification/push flow
    '''
 
    def __init__(self, wltId, title, parent):
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       DlgUnlockWallet.__init__(self, main=parent, parent=parent,
          wltID=wltId, unlockMsg=title)
 
@@ -352,7 +352,7 @@ class UnlockWalletHandler(ServerPush, DlgUnlockWallet):
       super().reply()
 
 ################################################################################
-class AutoUnlockHandler(ServerPush):
+class AutoUnlockHandler(BridgePrompt):
    '''
    Silently unlock a wallet when the caller already has the passphrase cached
    '''

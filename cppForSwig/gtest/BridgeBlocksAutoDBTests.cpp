@@ -80,8 +80,8 @@ protected:
       auto toBridge = message.initRoot<Codec::Bridge::ToBridge>();
       toBridge.setReferenceId(refId);
       auto request = toBridge.initSetup();
-      auto callbackId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
-      request.setCleanupAutomationContext(callbackId);
+      auto promptId = Cryptography::PRNG::fortuna.generateRandom(10).toHexStr();
+      request.setCleanupAutomationContext(promptId);
 
       auto rawReq = serializeCapnp(message);
       pushRequest(bridge_, rawReq);
@@ -111,7 +111,17 @@ protected:
                      break;
                   }
 
-                  case Codec::Bridge::Notification::CLEANUP:
+                  default:
+                     return -8;
+               }
+               break;
+            }
+
+            case Codec::Bridge::FromBridge::PROMPT:
+            {
+               auto prompt = fromBridge.getPrompt();
+               switch (prompt.which()) {
+                  case Codec::Bridge::Prompt::CLEANUP:
                   {
                      if (cleanup) {
                         return -2;
@@ -120,14 +130,13 @@ protected:
                      break;
                   }
 
-                  case Codec::Bridge::Notification::AUTOMATION:
+                  case Codec::Bridge::Prompt::AUTOMATION:
                   {
-                     if (notif.getCallbackId() != callbackId) {
+                     if (prompt.getId() != promptId) {
                         return -300;
                      }
-                     auto automationNotif = notif.getAutomation();
-                     switch (automationNotif.which()) {
-                        case Codec::Bridge::Notification::AutomationContextNotif::SHUTDOWN_DB:
+                     switch (prompt.getAutomation()) {
+                        case Codec::Bridge::Prompt::AutomationProgress::SHUTDOWN_DB:
                         {
                            if (step != 0) {
                               return -3;
@@ -136,7 +145,7 @@ protected:
                            break;
                         }
 
-                        case Codec::Bridge::Notification::AutomationContextNotif::DONE:
+                        case Codec::Bridge::Prompt::AutomationProgress::DONE:
                         {
                            if (step != 1) {
                               return -4;
@@ -150,6 +159,9 @@ protected:
                      }
                      break;
                   }
+
+                  default:
+                     return -9;
                }
                break;
             }
@@ -169,7 +181,7 @@ protected:
             }
 
             default:
-               return -8;
+               return -10;
          }
       }
       if (step != 2) {

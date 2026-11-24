@@ -186,10 +186,7 @@ void WalletManager::updateMainLedgerFilter(
 {
    mainLedgerFilter_ = idMap;
    notifQueue_->push_back(
-      std::make_unique<Notifications::Push::Command_Refresh>(
-         std::string{}, //socket name is ignored in NoSync refresh
-         std::string{"wallet_filter_changed"},
-         Notifications::SyncState::NoSync));
+      std::make_unique<Notifications::Push::Command_UpdateWalletFilter>());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -753,7 +750,7 @@ bool WalletManager::updateStateFromDB(
       }
    }
 
-   //fire callback
+   //escalate the notification to the client if eligible
    switch (sharedPayload->type)
    {
       case Push::PayloadType::NEWBLOCK:
@@ -772,6 +769,15 @@ bool WalletManager::updateStateFromDB(
          auto refreshPtr =
             std::dynamic_pointer_cast<Push::Command_Refresh>(sharedPayload);
          auto message = Serialization::getRefreshPacket(refreshPtr);
+         notifQueue_->push_back(
+            std::make_unique<Notifications::Push::Command_PassAlong>(
+               std::move(message)));
+         break;
+      }
+
+      case Push::PayloadType::UPDATE_WALLET_FILTER:
+      {
+         auto message = Serialization::getUpdateWalletFiltersPacket();
          notifQueue_->push_back(
             std::make_unique<Notifications::Push::Command_PassAlong>(
                std::move(message)));

@@ -14,7 +14,7 @@ from qtpy import QtCore, QtGui, QtWidgets
 
 from armorycolors import htmlColor
 from armoryengine.ArmoryUtils import isASCII
-from armoryengine.CppBridge import ServerPush
+from armoryengine.CppBridge import BridgePrompt
 from armoryengine.BDM import TheBDM
 
 from qtdialogs.ArmoryDialog import ArmoryDialog
@@ -23,10 +23,10 @@ from qtdialogs.qtdefines import MIN_PASSWD_WIDTH
 from ui.QtExecuteSignal import TheSignalExecution
 
 ################################################################################
-class DlgChangePassphrase(ArmoryDialog, ServerPush):
+class DlgChangePassphrase(ArmoryDialog, BridgePrompt):
    def __init__(self, parent=None, main=None, wallet=None):
       ArmoryDialog.__init__(self, parent, main)
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       self.wallet = wallet
       self.passphrase = None
 
@@ -163,7 +163,7 @@ class DlgChangePassphrase(ArmoryDialog, ServerPush):
             self.accept()
       def callbackWrapper(packet):
          TheSignalExecution.executeMethod(callback, packet)
-      self.wallet.changePassphrase(True, self.callbackId, callbackWrapper)
+      self.wallet.changePassphrase(True, self.promptId, callbackWrapper)
 
    def updateProgress(self, verbose: str):
       def innerMethod(message):
@@ -175,7 +175,7 @@ class DlgChangePassphrase(ArmoryDialog, ServerPush):
    def parseProtoPacket(self, payload):
       if payload.which() == 'cleanup':
          self.updateProgress("done")
-         TheBDM.unregisterPrompt(self.callbackId)
+         TheBDM.unregisterPrompt(self.promptId)
 
       elif payload.which() == 'unlockRequest':
          packet = self.getNewPacket()

@@ -59,7 +59,6 @@
 #include <Utils/ThreadSafeClasses.h>
 #include <Utils/BinaryData.h>
 #include "Progress.h"
-#include "bdmenums.h"
 #include "BlockObj.h"
 
 #define BATCH_SIZE 1024 * 1024 * 128ULL
@@ -185,14 +184,10 @@ private:
    const unsigned totalThreadCount_;
    const unsigned memTarget_;
    const unsigned totalBlockFileCount_;
+   const Armory::BDMProgress::ReportFunc progress_;
 
    Armory::Hash32 topScannedBlockHash_;
-
-   ProgressCallback progress_ = nullptr;
-   bool reportProgress_ = false;
-
    unsigned startAt_ = 0;
-
    std::mutex resolverMutex_;
 
    Armory::Threading::BlockingQueue<std::unique_ptr<ParserBatch>> outputQueue_;
@@ -204,8 +199,6 @@ private:
 
 private:
    void commitBatches(void);
-   //void processAndCommitTxHints(ParserBatch*);
-
    int32_t check_merkle(int32_t);
 
    void processFilterHitsThread(
@@ -229,7 +222,7 @@ public:
       LMDBBlockDatabase*, ScrAddrFilter*,
       std::shared_ptr<BlockFiles>,
       unsigned, unsigned,
-      ProgressCallback, bool);
+      const Armory::BDMProgress::ReportFunc&);
 
    bool scan(ScannerContext&, int32_t);
    bool resolveTxHashes();

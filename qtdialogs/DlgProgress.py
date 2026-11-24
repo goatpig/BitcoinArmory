@@ -19,7 +19,6 @@ from qtdialogs.qtdefines import STRETCH
 from qtdialogs.ArmoryDialog import ArmoryDialog
 
 from armoryengine.ArmoryUtils import PyBackgroundThread
-from armoryengine.BDM import BDMPhase_Completed
 from ui.QtExecuteSignal import TheSignalExecution
 
 ###############################################################################
@@ -77,7 +76,7 @@ class DlgProgress(ArmoryDialog):
          time.sleep(0.01)
 
    def UpdateDlg(self, text=None, HBar=None, phase=None):
-      if phase == BDMPhase_Completed:
+      if phase == 'completed':
          if self.btnStop is not None:
             self.btnStop.setText(self.tr('Close'))
          else:

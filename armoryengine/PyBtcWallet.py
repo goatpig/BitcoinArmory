@@ -484,7 +484,7 @@ class PyBtcWallet(object):
    #############################################################################
    ## create/export
    @staticmethod
-   def createNewWallet(replyCallback: callable, callbackId: str,
+   def createNewWallet(replyCallback: callable, promptId: str,
       shortLabel: str='', longLabel: str='', extraEntropy: bytes=None):
 
       """
@@ -518,7 +518,7 @@ class PyBtcWallet(object):
       TheBridge.utils.createWallet(
          addrPoolSize,
          shortLabel, longLabel, extraEntropy,
-         callbackId, replyCallback
+         promptId, replyCallback
       )
 
    ####
@@ -769,8 +769,8 @@ class PyBtcWallet(object):
       file.close()
 
    ####
-   def changePassphrase(self, isPriv, callbackId, callback):
-      self.bridgeWalletObj.changePassphrase(isPriv, callbackId, callback)
+   def changePassphrase(self, isPriv, promptId, callback):
+      self.bridgeWalletObj.changePassphrase(isPriv, promptId, callback)
 
    ####
    def createAddressBook(self):

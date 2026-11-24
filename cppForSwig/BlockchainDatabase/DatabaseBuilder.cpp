@@ -245,8 +245,9 @@ namespace {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Builder
-Builder::Builder(BlockDataManager& bdm, const ProgressCallback &progress)
-   : blockFiles_(bdm.blockFiles()), blockchain_(bdm.blockchain()),
+Builder::Builder(BlockDataManager& bdm,
+   const BDMProgress::ReportFunc &progress) :
+   blockFiles_(bdm.blockFiles()), blockchain_(bdm.blockchain()),
    db_(bdm.getIFace()), scrAddrFilter_(bdm.getScrAddrFilter()),
    progress_(progress)
 {
@@ -271,7 +272,7 @@ bool Builder::init()
 
    LOGINFO << "organizing chain";
    if (progress_) {
-      progress_(BDMPhase_OrganizingChain, 0, UINT32_MAX, 0);
+      progress_(BDMProgress::Phase::OrganizeHeaders);
    }
    blockchain_->organize(true, false);
 
@@ -413,13 +414,13 @@ bool Builder::init()
 
 ////////
 void Builder::loadBlockHeadersFromDB(
-   const ProgressCallback& progress)
+   const BDMProgress::ReportFunc& progress)
 {
    // every ten minutes we get a block, how many blocks exist?
    const time_t btcEpoch = 1230963300; // genesis block ts
    const time_t now = time(nullptr);
    const unsigned expectedTotalBlockCount = (now - btcEpoch) / 60 / 10;
-   ProgressCalculator calc(expectedTotalBlockCount);
+   BDMProgress::Calculator calc(expectedTotalBlockCount);
 
    const auto callback = [&calc, &progress](size_t count)
    {
@@ -428,18 +429,13 @@ void Builder::loadBlockHeadersFromDB(
       }
 
       calc.advance(count);
-      progress(
-         BDMPhase_DBHeaders,
-         calc.fractionCompleted(),
-         calc.remainingSeconds(),
-         count
-      );
+      progress({BDMProgress::Phase::LoadHeaders, calc});
    };
    blockchain_->loadHeadersFromDB(db_, callback);
 }
 
 ////////
-BlockOffset Builder::parseForNewHeaders(const ProgressCallback& progress)
+BlockOffset Builder::parseForNewHeaders(const BDMProgress::ReportFunc&)
 {
    std::shared_ptr<BlockDataLoader> bdl;
    auto topBlockOffset = blockchain_->getTopBlockOffset();
@@ -532,16 +528,16 @@ BlockOffset Builder::parseForNewHeaders(const ProgressCallback& progress)
       }
    }
 
-   LOGINFO << "found " << total.load(std::memory_order_relaxed)
-      << " new headers";
-   LOGINFO << "staged " << count.load(std::memory_order_relaxed)
-      << " of them";
+   LOGINFO << std::format("parsed {} new headers",
+      total.load(std::memory_order_relaxed));
+   LOGINFO << std::format("staged {} of them",
+      count.load(std::memory_order_relaxed));
    return topBlockOffset;
 }
 
 ////////
 void Builder::parseForNewBlocks(const BlockOffset& startBO,
-   const ProgressCallback& progress)
+   const BDMProgress::ReportFunc& progress)
 {
    if (!startBO.isValid()) {
       return;
@@ -554,14 +550,10 @@ void Builder::parseForNewBlocks(const BlockOffset& startBO,
    }
 
    //init progress
-   ProgressCalculator calc(blockFiles_->fileCount());
+   BDMProgress::Calculator calc(blockFiles_->fileCount());
    if (progress) {
       calc.init(lastParsedFileID);
-      progress(BDMPhase_BlockData,
-         calc.fractionCompleted(),
-         UINT32_MAX,
-         lastParsedFileID
-      );
+      progress({BDMProgress::Phase::ParseNewBlocks, calc});
    }
 
    //parser threads will start with block fileID + 1
@@ -595,9 +587,7 @@ void Builder::parseForNewBlocks(const BlockOffset& startBO,
          if (progress && fileCopy.fileID >= lastParsedFileID + 100) {
             LOGINFO << "parsed block file #" << fileCopy.fileID;
             calc.advance(fileCopy.fileID);
-            progress(BDMPhase_BlockData,
-               calc.fractionCompleted(), calc.remainingSeconds(),
-               fileCopy.fileID);
+            progress({BDMProgress::Phase::ParseNewBlocks, calc});
 
             //bump last seen file, this doesn't need to be accurate
             lastParsedFileID = fileCopy.fileID;
@@ -832,7 +822,7 @@ Hash32 Builder::initTransactionHistory(
 }
 
 Hash32 Builder::scanHistory(const ReorganizationState& reorgState,
-   bool reportprogress, bool init)
+   bool reportProgress, bool init)
 {
    /*
    Hold the main SAF merge lock. This is used to synchronize address
@@ -882,22 +872,12 @@ Hash32 Builder::scanHistory(const ReorganizationState& reorgState,
          db_, scrAddrFilter_.get(),
          blockFiles_,
          Config::DBSettings::threadCount(), Config::DBSettings::ramUsage(),
-         progress_, reportprogress);
+         reportProgress ? progress_ : nullptr);
 
       if (!bcs.scan(*scannerCtx_, startHeader->getBlockHeight())) {
          LOGERR << "scan failed!";
          return Hash32{};
       }
-
-      /*
-      unsigned count = 0;
-      while (!bcs.resolveTxHashes()) {
-         ++count;
-         if (count > 5) {
-            LOGERR << "failed to fix filters after 5 attempts";
-            break;
-         }
-      }*/
 
       scrAddrFilter_->updateScannedHash(bcs.getTopScannedBlockHash());
       lastScanRange = std::make_pair(
@@ -970,7 +950,7 @@ void Builder::verifyChain()
    blockchain_->putNewHeaders(db_);
 
    if (Config::DBSettings::reportProgress()) {
-      progress_(BDMPhase_OrganizingChain, 0, UINT32_MAX, 0);
+      progress_({BDMProgress::Phase::OrganizeHeaders});
    }
    auto initialReorgState = blockchain_->organize(true, false);
 

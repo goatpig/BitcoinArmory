@@ -331,7 +331,7 @@ void WalletDBInterface::loadSeed(std::shared_ptr<WalletHeader> headerPtr)
 ////////
 MasterKeyStruct WalletDBInterface::initWalletHeaderObject(
    std::shared_ptr<WalletHeader> headerPtr,
-   Armory::Passphrase::Params& params)
+   Passphrase::PassAndParams& params)
 {
    /*
    Setup master and top encryption key.
@@ -467,7 +467,7 @@ std::shared_ptr<WalletHeader_Control> WalletDBInterface::setupControlDB(
    } catch (const std::exception&) {
       LOGWARN << "No control passphrase provided!";
       LOGWARN << "The public data in this wallet will not be encrypted";
-      Armory::Passphrase::Params defaultParams{250ms, 0, {}};
+      Passphrase::PassAndParams defaultParams{250ms, 0, {}};
       keyStruct = std::move(initWalletHeaderObject(headerPtr, defaultParams));
    }
 

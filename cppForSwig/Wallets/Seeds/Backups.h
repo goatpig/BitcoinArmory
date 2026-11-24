@@ -285,14 +285,6 @@ namespace Armory
          bool needsReply(void) const;
       };
 
-      struct PromptReply
-      {
-         const bool success;
-         const bool merge;
-
-         Passphrase::Params passParams;
-      };
-
       struct RestoreResult
       {
          std::shared_ptr<Wallets::AssetWallet> wltPtr;
@@ -302,7 +294,7 @@ namespace Armory
       ////
       struct Helpers
       {
-         using UserPrompt = std::function<PromptReply(const RestorePrompt&)>;
+         using UserPrompt = std::function<Passphrase::PromptReply(const RestorePrompt&)>;
 
          //backup methods
          static std::unique_ptr<WalletBackup> getWalletBackup(

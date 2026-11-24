@@ -17,21 +17,18 @@ PassphraseException::PassphraseException(const std::string& err)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-//
-//// Params
-//
-////////////////////////////////////////////////////////////////////////////////
-Params::Params() :
+// PassAndParams
+PassAndParams::PassAndParams() :
    type(Type::Invalid), unlockMs(0ms), reuseKdf(false)
 {}
 
-Params::Params(std::chrono::milliseconds target, uint32_t mb,
+PassAndParams::PassAndParams(std::chrono::milliseconds target, uint32_t mb,
    SecureBinaryData pass) :
    type(Type::SetNew), unlockMs(target), memTargetMB(mb),
    reuseKdf(false), passphrase{std::move(pass)}
 {}
 
-Params::Params(SecureBinaryData pass, bool reuseKdf) :
+PassAndParams::PassAndParams(SecureBinaryData pass, bool reuseKdf) :
    type(reuseKdf ? Type::SetNew : Type::Unlock),
    unlockMs(0ms), reuseKdf(reuseKdf), passphrase{std::move(pass)}
 {}
@@ -42,7 +39,7 @@ Params::Params(SecureBinaryData pass, bool reuseKdf) :
 //
 ////////////////////////////////////////////////////////////////////////////////
 SetNew::SetNew() :
-   params_(std::make_unique<Params>()),
+   passAndparams_(std::make_unique<PassAndParams>()),
    setNewPassphrase_(nullptr)
 {}
 
@@ -50,7 +47,7 @@ SetNew::SetNew() :
 SetNew::SetNew(std::chrono::milliseconds kdfUnlockTime,
    uint32_t kdfMemTarget,
    SecureBinaryData passphrase) :
-   params_(std::make_unique<Params>(
+   passAndparams_(std::make_unique<PassAndParams>(
       kdfUnlockTime, kdfMemTarget, std::move(passphrase))),
    setNewPassphrase_(nullptr)
 {}
@@ -64,30 +61,32 @@ SetNew::SetNew(const SetNewPassFunc& func) :
 SetNew::SetNew(const SetNew& rhs) :
    setNewPassphrase_(rhs.setNewPassphrase_)
 {
-   if (rhs.params_ != nullptr && rhs.params_->type != Params::Type::Invalid) {
-      params_ = std::make_unique<Params>(
-         rhs.params_->unlockMs,
-         rhs.params_->memTargetMB,
-         rhs.params_->passphrase);
+   if (rhs.passAndparams_ != nullptr &&
+      rhs.passAndparams_->type != PassAndParams::Type::Invalid) {
+      passAndparams_ = std::make_unique<PassAndParams>(
+         rhs.passAndparams_->unlockMs,
+         rhs.passAndparams_->memTargetMB,
+         rhs.passAndparams_->passphrase);
    } else if (setNewPassphrase_ == nullptr) {
-      params_ = std::make_unique<Params>();
+      passAndparams_ = std::make_unique<PassAndParams>();
    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-const Params& SetNew::get() const
+const PassAndParams& SetNew::get() const
 {
-   if (params_ == nullptr) {
+   if (passAndparams_ == nullptr) {
       if (setNewPassphrase_ == nullptr) {
          throw PassphraseException("cannot get passphrase");
       }
 
-      params_ = std::move(setNewPassphrase_());
-      if (params_ == nullptr || params_->type != Params::Type::SetNew) {
+      passAndparams_ = std::move(setNewPassphrase_());
+      if (passAndparams_ == nullptr ||
+         passAndparams_->type != PassAndParams::Type::SetNew) {
          throw PassphraseException("passphrase request was rejected");
       }
    }
-   return *params_;
+   return *passAndparams_;
 }
 
 ////
@@ -95,8 +94,8 @@ SetNew SetNew::copy() const
 {
    //allows for a copy when the object is setup with
    //a lambda that wasnt called yet
-   if (params_ != nullptr) {
-      if (params_->type == Params::Type::Invalid) {
+   if (passAndparams_ != nullptr) {
+      if (passAndparams_->type == PassAndParams::Type::Invalid) {
          return {};
       }
       throw PassphraseException("this SetNew is not copyable");
@@ -107,21 +106,21 @@ SetNew SetNew::copy() const
 }
 
 ////
-std::unique_ptr<Params> SetNew::moveParams()
+std::unique_ptr<PassAndParams> SetNew::movePassAndParams()
 {
-   if (params_->passphrase.empty()) {
+   if (passAndparams_->passphrase.empty()) {
       throw PassphraseException("cannot get passphrase");
    }
-   return std::move(params_);
+   return std::move(passAndparams_);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 UnlockFunc SetNew::getUnlockFunc() const
 {
-   if (params_ == nullptr) {
+   if (passAndparams_ == nullptr) {
       throw PassphraseException("call get first");
-   } else if (params_->type == Params::Type::Invalid) {
-      return [](const std::set<Armory::Wallets::EncryptionKeyId>&)->Result {
+   } else if (passAndparams_->type == PassAndParams::Type::Invalid) {
+      return [](const std::set<Wallets::EncryptionKeyId>&)->Result {
          /*
          Typical scenario for reaching this block is to create an encrypted
          container with no password provided, then trying to unlock it.
@@ -131,8 +130,8 @@ UnlockFunc SetNew::getUnlockFunc() const
       };
    }
 
-   return [&pass=params_->passphrase]
-   (const std::set<Armory::Wallets::EncryptionKeyId>&)->Result {
+   return [&pass=passAndparams_->passphrase]
+   (const std::set<Wallets::EncryptionKeyId>&)->Result {
       return {pass, true};
    };
 }

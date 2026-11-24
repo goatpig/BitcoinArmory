@@ -13,6 +13,7 @@
 #include <Utils/Types.h>
 #include <BlockchainDatabase/Blockchain.h>
 #include "bdmenums.h"
+#include "Progress.h"
 
 #define BDV_NOTIF_BROADCAST UINT64_MAX
 
@@ -101,14 +102,12 @@ struct BDV_Notification_Refresh : public BDV_Notification
 ////////
 struct BDV_Notification_Progress : public BDV_Notification
 {
-   BDMPhase phase;
-   double progress;
-   unsigned time;
-   unsigned numericProgress;
+   const Armory::BDMProgress::Tick tick;
    const std::vector<std::string> walletIDs;
 
-   BDV_Notification_Progress(BDMPhase, double,
-      unsigned, unsigned, const std::vector<std::string>&);
+   BDV_Notification_Progress(
+      const Armory::BDMProgress::Tick&,
+      const std::vector<std::string>&);
    BDV_Action actionType(void) const override;
 };
 

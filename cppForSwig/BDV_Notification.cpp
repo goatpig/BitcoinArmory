@@ -95,11 +95,10 @@ BDV_Action BDV_Notification_Refresh::actionType() const
 ///////////////////////////////////////////////////////////////////////////////
 // BDV_Notification_Progress
 BDV_Notification_Progress::BDV_Notification_Progress(
-   BDMPhase phase, double prog, unsigned time, unsigned numProg,
+   const Armory::BDMProgress::Tick& t,
    const std::vector<std::string>& walletIDs) :
    BDV_Notification(BDV_NOTIF_BROADCAST),
-   phase(phase), progress(prog), time(time),
-   numericProgress(numProg), walletIDs(walletIDs)
+   tick{t}, walletIDs(walletIDs)
 {}
 
 BDV_Action BDV_Notification_Progress::actionType() const

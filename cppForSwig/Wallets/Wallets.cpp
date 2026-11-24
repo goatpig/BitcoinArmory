@@ -1579,8 +1579,8 @@ std::shared_ptr<AssetWallet_Single> AssetWallet_Single::initWalletDbWithPubRoot(
       auto ctrlParams = params.setCtrlPassObj.get();
       IO::WalletDBInterface::initWalletHeaderObject(headerPtr, ctrlParams);
    } catch (const std::exception&) {
-      Passphrase::Params defaultParams{250ms, 0, {}};
-      IO::WalletDBInterface::initWalletHeaderObject(headerPtr, defaultParams);
+      Passphrase::PassAndParams emptyPass{250ms, 0, {}};
+      IO::WalletDBInterface::initWalletHeaderObject(headerPtr, emptyPass);
    }
    auto walletPtr = std::make_shared<AssetWallet_Single>(
       iface, headerPtr, masterID);
@@ -2383,7 +2383,7 @@ std::filesystem::path AssetWallet_Single::forkWatchingOnly(
       auto headerPtr = std::make_shared<IO::WalletHeader_Single>(
          Armory::Config::BitcoinSettings::getMagicBytes());
       headerPtr->walletID_ = wpd.walletID;
-      Armory::Passphrase::Params params{};
+      Passphrase::PassAndParams params{};
       IO::WalletDBInterface::initWalletHeaderObject(headerPtr, params);
       woIface->addHeader(headerPtr);
    }

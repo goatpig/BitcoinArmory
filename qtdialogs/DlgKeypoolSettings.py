@@ -10,7 +10,7 @@
 #                                                                            #
 ##############################################################################
 
-from armoryengine.CppBridge import ServerPush
+from armoryengine.CppBridge import BridgePrompt
 from armoryengine.BDM import TheBDM
 
 from qtpy import QtWidgets
@@ -22,12 +22,12 @@ from qtdialogs.ArmoryDialog import ArmoryDialog
 from ui.QtExecuteSignal import TheSignalExecution
 
 ################################################################################
-class DlgKeypoolSettings(ArmoryDialog, ServerPush):
+class DlgKeypoolSettings(ArmoryDialog, BridgePrompt):
    """
    Let the user manually adjust the keypool for this wallet
    """
    def __init__(self, wlt, parent=None, main=None):
-      ServerPush.__init__(self)
+      BridgePrompt.__init__(self)
       ArmoryDialog.__init__(self, parent, main)
 
       self.wlt = wlt
@@ -97,7 +97,7 @@ class DlgKeypoolSettings(ArmoryDialog, ServerPush):
    #############################################################################
    def parseProtoPacket(self, payload):
       if payload.which() == 'cleanup':
-         TheBDM.unregisterPrompt(self.callbackId)
+         TheBDM.unregisterPrompt(self.promptId)
          return
 
       elif payload.which() == 'walletProgress':
@@ -145,7 +145,7 @@ class DlgKeypoolSettings(ArmoryDialog, ServerPush):
 
       def completedCallback():
          TheSignalExecution.executeMethod(self.completeCompute)
-      self.wlt.fillAddressPool(naddr, self.callbackId,
+      self.wlt.fillAddressPool(naddr, self.promptId,
          lambda a: TheSignalExecution.executeMethod(self.completeCompute, a))
 
    ####
