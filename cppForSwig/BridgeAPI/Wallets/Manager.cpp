@@ -186,7 +186,7 @@ void WalletManager::updateMainLedgerFilter(
 {
    mainLedgerFilter_ = idMap;
    notifQueue_->push_back(
-      std::make_unique<Notifications::Server::Notif_Refresh>(
+      std::make_unique<Notifications::Push::Command_Refresh>(
          std::string{"wallet_filter_changed"}));
 }
 
@@ -254,9 +254,10 @@ void WalletManager::setBdvPtr(std::shared_ptr<AsyncClient::BlockDataViewer> bdvP
          accIt.second->setBdvPtr(bdvPtr);
       }
    }
-   auto message = Notifications::Client::getSerializedSetupDoneNotif();
-   notifQueue_->push_back(std::make_unique<Notifications::Server::Notif_Push>(
-      std::move(message)));
+   auto message = Notifications::Serialization::getSetupDonePacket();
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Command_PassAlong>(
+         std::move(message)));
 }
 
 void WalletManager::cleanupBdvPtr()
@@ -280,9 +281,10 @@ void WalletManager::registerWallets()
          accIt.second->registerWithBDV(false);
       }
    }
-   auto message = Notifications::Client::getSerializedWalletsRegisteredNotif();
-   notifQueue_->push_back(std::make_unique<Notifications::Server::Notif_Push>(
-      std::move(message)));
+   auto message = Notifications::Serialization::getWalletsRegisteredPacket();
+   notifQueue_->push_back(
+      std::make_unique<Notifications::Push::Command_PassAlong>(
+         std::move(message)));
 }
 
 void WalletManager::registerWallet(const Wallets::WalletId& wltId,
@@ -294,9 +296,9 @@ void WalletManager::registerWallet(const Wallets::WalletId& wltId,
    try {
       container->registerWithBDV(isNew);
    } catch (const OfflineException& e) {
-      auto message = Client::getSerializedRefreshNotif(
-         std::make_unique<Server::Notif_Refresh>(container->getDbId()));
-      notifQueue_->push_back(std::make_unique<Server::Notif_Push>(
+      auto message = Serialization::getRefreshPacket(
+         std::make_unique<Push::Command_Refresh>(container->getDbId()));
+      notifQueue_->push_back(std::make_unique<Push::Command_PassAlong>(
          std::move(message)));
       throw e;
    }
@@ -701,13 +703,13 @@ void WalletManager::loadWallets()
 
 ////////////////////////////////////////////////////////////////////////////////
 void WalletManager::updateStateFromDB(
-   std::unique_ptr<Notifications::Server::Notif> notif)
+   std::unique_ptr<Notifications::Push::Payload> payload)
 {
    using namespace Notifications;
 
    //update txio cache
-   std::shared_ptr<Server::Notif> sharedNotif{std::move(notif)};
-   auto checkFromHeight = txioCache_->update(bdvPtr_, sharedNotif);
+   std::shared_ptr<Push::Payload> sharedPayload{std::move(payload)};
+   auto checkFromHeight = txioCache_->update(bdvPtr_, sharedPayload);
 
    //resolve wallets
    {
@@ -716,52 +718,52 @@ void WalletManager::updateStateFromDB(
          wltCont.second->resolveTxios(checkFromHeight);
          wltCont.second->resolveZcTxios();
 
-         if (sharedNotif->syncWalletState()) {
+         if (sharedPayload->syncWalletState()) {
             wltCont.second->synchronizeAddressChainState();
          }
       }
    }
 
       //fire callback
-   switch (sharedNotif->type)
+   switch (sharedPayload->type)
    {
-      case Server::NotifType::NEWBLOCK:
+      case Push::PayloadType::NEWBLOCK:
       {
          auto blockPtr =
-            std::dynamic_pointer_cast<Server::Notif_NewBlock>(sharedNotif);
-         auto message = Client::getSerializedNewBlockNotif(blockPtr);
+            std::dynamic_pointer_cast<Push::Notif_NewBlock>(sharedPayload);
+         auto message = Serialization::getNewBlockPacket(blockPtr);
          notifQueue_->push_back(
-            std::make_unique<Notifications::Server::Notif_Push>(
+            std::make_unique<Notifications::Push::Command_PassAlong>(
                std::move(message)));
          break;
       }
 
-      case Server::NotifType::REFRESH:
+      case Push::PayloadType::REFRESH:
       {
          auto refreshPtr =
-            std::dynamic_pointer_cast<Server::Notif_Refresh>(sharedNotif);
-         auto message = Client::getSerializedRefreshNotif(refreshPtr);
+            std::dynamic_pointer_cast<Push::Command_Refresh>(sharedPayload);
+         auto message = Serialization::getRefreshPacket(refreshPtr);
          notifQueue_->push_back(
-            std::make_unique<Notifications::Server::Notif_Push>(
+            std::make_unique<Notifications::Push::Command_PassAlong>(
                std::move(message)));
          break;
       }
 
-      case Server::NotifType::ZC:
+      case Push::PayloadType::ZC:
       {
          //get ledgers for the zc txios
          auto ledgers = getLedgersForZCs(this);
 
          //feed them to callback
-         auto zcPtr = std::dynamic_pointer_cast<Server::Notif_ZC>(sharedNotif);
-         auto messages = Client::getSerializedZcNotif(
+         auto zcPtr = std::dynamic_pointer_cast<Push::Notif_ZC>(sharedPayload);
+         auto messages = Serialization::getZcPacket(
             ledgers, zcPtr->invalidatedZCHashes);
          notifQueue_->push_back(
-            std::make_unique<Notifications::Server::Notif_Push>(
+            std::make_unique<Notifications::Push::Command_PassAlong>(
                std::move(messages.first)));
          if (!messages.second.empty()) {
             notifQueue_->push_back(
-               std::make_unique<Notifications::Server::Notif_Push>(
+               std::make_unique<Notifications::Push::Command_PassAlong>(
                   std::move(messages.second)));
          }
          break;

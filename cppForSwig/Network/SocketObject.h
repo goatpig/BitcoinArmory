@@ -124,16 +124,16 @@ namespace Armory
          SOCKET openSocket(bool);
 
          static void closeSocket(SOCKET&);
+         const std::string& getAddrStr(void) const;
+         const std::string& name(void) const;
+
+         //virtuals
+         virtual SocketType type(void) const = 0;
+         virtual bool running(void) const = 0;
          virtual void pushPayload(
             std::unique_ptr<Socket_WritePayload>,
             std::shared_ptr<Socket_ReadPayload>) = 0;
          virtual bool connectToRemote(void) = 0;
-
-         virtual SocketType type(void) const = 0;
-         const std::string& getAddrStr(void) const;
-
-         //override me
-         virtual bool running(void) const = 0;
       };
 
       class SimpleSocket : public SocketPrototype

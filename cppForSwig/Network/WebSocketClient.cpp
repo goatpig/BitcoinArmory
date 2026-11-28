@@ -286,7 +286,6 @@ void WebSocketClient::cleanup()
       LOGERR << errStr;
       throw errStr;
    }
-   readPackets_.clear();
 
    //create error message to send to all outsanding read callbacks
    capnp::MallocMessageBuilder message;
@@ -313,8 +312,8 @@ void WebSocketClient::cleanup()
    //trigger callbacks for all outstanding query operations
    std::vector<std::thread> threads;
    {
-      auto readMap = readPackets_.get();
-      for (auto& readPair : *readMap) {
+      auto readMap = readPackets_.clear();
+      for (auto& readPair : readMap) {
          auto& msgObjPtr = readPair.second;
          auto callbackPtr = dynamic_cast<CallbackReturn_WebSocket*>(
             msgObjPtr->payload_->callbackReturn_.get());
@@ -382,7 +381,7 @@ int WebSocketClient::lwsServiceHandler(struct lws* wsi,
             } catch (const std::future_error&) {
                //promise already set, notify of disconnection
                if (instance->callbackPtr_ != nullptr) {
-                  instance->callbackPtr_->disconnected();
+                  instance->callbackPtr_->disconnected(instance->name());
                }
             }
             instance->shutdown();
