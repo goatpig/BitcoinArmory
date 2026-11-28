@@ -194,6 +194,23 @@ AC_PATH_PROG([CAPNPC], [capnpc], [])
 AS_IF([test x"$CAPNPC" = x],
   [AC_MSG_ERROR([cannot find capnpc (the capnproto compiler)])])
 
+dnl LMDB 1.0 changed the on-disk format: it can't open LMDB 0.9 files and
+dnl LMDB 0.9 can't open 1.0 files. Its development branch (mdb.master3,
+dnl the LMDB repo default) already writes the new format and reports
+dnl 0.9.90. Armory stays on the 0.9 format on all platforms.
+AC_MSG_CHECKING([LMDB version])
+AC_COMPUTE_INT([lmdb_version], [MDB_VERSION_FULL], [[#include <lmdb.h>]],
+  [AC_MSG_ERROR([lmdb.h not found or unusable])])
+lmdb_version="`expr $lmdb_version / 16777216`.`expr $lmdb_version / 65536 % 256`.`expr $lmdb_version % 65536`"
+AC_MSG_RESULT([$lmdb_version])
+AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
+#include <lmdb.h>
+#if MDB_VERSION_FULL >= MDB_VERINT(0, 9, 90)
+# error LMDB 1.0 file format
+#endif
+]])], [],
+  [AC_MSG_ERROR([LMDB $lmdb_version is not supported: it uses the LMDB 1.0 file format, which can't open LMDB 0.9 files; build LMDB 0.9 from source, see build_instructions])])
+
 if test x$use_pkgconfig$with_own_lws = xyesno; then
     PKG_CHECK_MODULES_STATIC([WEBSOCKETS], [libwebsockets_static >= 3.0.1],,[AC_MSG_ERROR(libwebsockets_static >= 3.0.1 not found.)])
     AC_MSG_CHECKING([libwebsockets lib path])
