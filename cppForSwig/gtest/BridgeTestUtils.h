@@ -136,9 +136,9 @@ namespace BridgeTestUtils {
       const Codec::BDV::Request::Reader& reader,
       Codec::BDV::BdvRequest::Which which);
 
-   bool checkStaticRequestType(
+   bool checkChainRequestType(
       const Codec::BDV::Request::Reader& reader,
-      Codec::BDV::StaticRequest::Which which);
+      Codec::BDV::ChainRequest::Which which);
 
    /////////////////////////////////////////////////////////////////////////////
    // bridge client side mocked comms layer

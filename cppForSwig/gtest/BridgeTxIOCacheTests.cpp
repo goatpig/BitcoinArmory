@@ -406,7 +406,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
             auto request = reader.second->getRoot<Codec::BDV::Request>();
             if (checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXS_BY_KEY)) {
                messageIdToFail = reader.first;
-            } else if (checkStaticRequestType(request, Codec::BDV::StaticRequest::Which::GET_HEADERS_BY_ID)) {
+            } else if (checkChainRequestType(request, Codec::BDV::ChainRequest::Which::GET_HEADERS_BY_ID)) {
                ninja.passMessageToBDM(reader.first);
             } else {
                throw std::runtime_error("expected getTxsByKey or getHeaders request");
@@ -468,7 +468,7 @@ TEST_F(TxIOCacheTests, PurgeStates)
             auto request = reader.second->getRoot<Codec::BDV::Request>();
             if (checkBDVRequestType(request, Codec::BDV::BdvRequest::Which::GET_TXS_BY_KEY)) {
                ninja.passMessageToBDM(reader.first);
-            } else if (checkStaticRequestType(request, Codec::BDV::StaticRequest::Which::GET_HEADERS_BY_ID)) {
+            } else if (checkChainRequestType(request, Codec::BDV::ChainRequest::Which::GET_HEADERS_BY_ID)) {
                messageIdToFail = reader.first;
             } else {
                throw std::runtime_error("expected getTxsByKey or getHeaders request");

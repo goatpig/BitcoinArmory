@@ -107,15 +107,15 @@ namespace BridgeTestUtils {
       return bdvReq.which() == which;
    }
 
-   bool checkStaticRequestType(
+   bool checkChainRequestType(
       const Codec::BDV::Request::Reader& reader,
-      Codec::BDV::StaticRequest::Which which)
+      Codec::BDV::ChainRequest::Which which)
    {
-      if (reader.which() != Codec::BDV::Request::Which::STATIC) {
+      if (reader.which() != Codec::BDV::Request::Which::CHAIN) {
          return false;
       }
-      auto staticReq = reader.getStatic();
-      return staticReq.which() == which;
+      auto chainReq = reader.getChain();
+      return chainReq.which() == which;
    }
 
    std::mutex commsMutex;

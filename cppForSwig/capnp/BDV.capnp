@@ -4,7 +4,7 @@ using Cxx = import "/capnp/c++.capnp";
 $Cxx.namespace("Armory::Codec::BDV");
 using Types = import "Types.capnp";
 
-##### statics #####
+##### statics: do not need a ready BDM #####
 struct StaticRequest {
    magicWord               @0 : Text;
 
@@ -16,12 +16,6 @@ struct StaticRequest {
       start                @4 : Void;
       shutdown             @5 : Void;
       getNodeStatus        @6 : Void;
-      getFeeSchedule       @7 : Text;
-      getTopBlockHeight    @8 : Void;
-      getHeadersByHeight   @9: List(UInt32);
-      getHeadersById       @10: List(UInt32);
-      broadcast            @11: List(Data);
-      rpcBroadcast         @12: Data;
    }
 }
 
@@ -30,10 +24,31 @@ struct StaticReply {
       unset                @0 : Void;
 
       getNodeStatus        @1 : Types.NodeStatus;
-      getFeeSchedule       @2 : List(Types.FeeSchedule);
-      getTopBlockHeight    @3 : UInt32;
-      getHeadersByHeight   @4 : List(Types.Header);
-      getHeadersById       @5 : List(Types.Header);
+   }
+}
+
+##### chain: need a ready BDM, rejected until then #####
+struct ChainRequest {
+   union {
+      unset                @0 : Void;
+
+      getFeeSchedule       @1 : Text;
+      getTopBlockHeight    @2 : Void;
+      getHeadersByHeight   @3 : List(UInt32);
+      getHeadersById       @4 : List(UInt32);
+      broadcast            @5 : List(Data);
+      rpcBroadcast         @6 : Data;
+   }
+}
+
+struct ChainReply {
+   union {
+      unset                @0 : Void;
+
+      getFeeSchedule       @1 : List(Types.FeeSchedule);
+      getTopBlockHeight    @2 : UInt32;
+      getHeadersByHeight   @3 : List(Types.Header);
+      getHeadersById       @4 : List(Types.Header);
    }
 }
 
@@ -135,6 +150,7 @@ struct Request {
       static   @1 : StaticRequest;
       bdv      @2 : BdvRequest;
       wallet   @3 : WalletRequest;
+      chain    @4 : ChainRequest;
    }
 }
 
@@ -147,6 +163,7 @@ struct Reply {
       static   @3 : StaticReply;
       bdv      @4 : BdvReply;
       wallet   @5 : WalletReply;
+      chain    @6 : ChainReply;
    }
 }
 
