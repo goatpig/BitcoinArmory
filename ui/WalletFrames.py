@@ -765,6 +765,15 @@ class WalletBackupFrame(ArmoryFrame):
       self.optDigitalBackupTop.setFont(GETFONT('Var', bold=True))
       self.optIndivKeyListTop.setFont(GETFONT('Var', bold=True))
 
+      # Fragmented and digital backups don't work in 0.97 yet, so they
+      # stay visible but disabled. Unencrypted and Encrypted only get the
+      # tooltip here; optionClicked sets their enabled state.
+      self.optPaperBackupFrag.setEnabled(False)
+      self.optDigitalBackupTop.setEnabled(False)
+      for opt in [self.optPaperBackupFrag, self.optDigitalBackupTop,
+            self.optDigitalBackupPlain, self.optDigitalBackupCrypt]:
+         opt.setToolTip(self.tr('Not available yet in 0.97'))
+
       # I need to be able to unset the sub-options when they become disabled
       self.optPaperBackupNONE = QtWidgets.QRadioButton('')
       self.optDigitalBackupNONE = QtWidgets.QRadioButton('')
@@ -1057,7 +1066,7 @@ class WalletBackupFrame(ArmoryFrame):
    def optionClicked(self):
       if self.optPaperBackupTop.isChecked():
          self.optPaperBackupOne.setEnabled(True)
-         self.optPaperBackupFrag.setEnabled(True)
+         self.optPaperBackupOne.setChecked(True)
          self.optDigitalBackupPlain.setEnabled(False)
          self.optDigitalBackupCrypt.setEnabled(False)
          self.optDigitalBackupPlain.setChecked(False)
@@ -1142,11 +1151,12 @@ class WizardCreateWatchingOnlyWalletFrame(ArmoryFrame):
          'watching-only wallet to someone who needs to monitor the wallet '
          'but should not be able to move the money. '
          '<br><br>'
-         'Click the button to save a watching-only copy of this wallet. '
-         'Use the "<i>Import or Restore Wallet</i>" button in the '
-         'upper-right corner'))
+         'Saving a watching-only copy of this wallet is not available '
+         'yet in 0.97.'))
       lbtnForkWlt = QtWidgets.QPushButton('Create Watching-Only Copy')
       lbtnForkWlt.clicked.connect(self.forkOnlineWallet)
+      lbtnForkWlt.setEnabled(False)
+      lbtnForkWlt.setToolTip(self.tr('Not available yet in 0.97'))
       layout = QtWidgets.QVBoxLayout()
       layout.addWidget(summaryText)
       layout.addWidget(lbtnForkWlt)
